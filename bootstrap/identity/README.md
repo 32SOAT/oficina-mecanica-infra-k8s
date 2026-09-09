@@ -48,11 +48,19 @@ producao environment while retaining the read-only plan permissions.
   `${project_name}-${stack}-eks-node`, or
   `${project_name}-${stack}-runtime-boundary` for other current and future stack
   roles. EKS managed-policy attachment is split across the exact cluster and
-  node roles and requires their matching boundary. The cluster maximum includes
-  its tagged EC2, autoscaling and load-balancing operations; the node maximum
-  includes tagged CNI networking, exact-cluster discovery and project ECR pull.
-  None grants IAM, STS, RDS, S3/state or KMS access. Controllers cannot remove,
-  modify, version or delete a boundary. `permissions_boundary_arns` exposes an
+  node roles and requires their matching boundary. The cluster maximum mirrors
+  the complete `AmazonEKSClusterPolicy` v10 action/resource contract, including
+  its official ELB service-linked-role and orphaned-CNI ENI conditions. It allows
+  only read-only `kms:DescribeKey` and explicitly denies that action on the
+  Terraform state key. The node maximum combines the complete
+  `AmazonEKSWorkerNodePolicy` v3 and `AmazonEKS_CNI_Policy` v6 contracts with the
+  `AmazonEC2ContainerRegistryReadOnly` v3 actions scoped to the project ECR where
+  resource-level authorization is available. The inherent `Resource = "*"`
+  scope of EKS/EC2 discovery and CNI mutations is preserved so the boundaries do
+  not nullify their attached AWS policies. Neither maximum grants STS, RDS, S3,
+  KMS use beyond `DescribeKey`, nor IAM beyond the conditioned ELB service-linked
+  role creation. Controllers cannot remove, modify, version or delete a boundary.
+  `permissions_boundary_arns` exposes an
   unambiguous `eks_cluster`, `eks_node` and `application` ARN for every stack so
   downstream modules can apply the correct contract. Role and instance-profile
   reads remain scoped to the stack prefix.

@@ -425,16 +425,53 @@ resource "aws_iam_policy" "eks_cluster_boundary" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "RegionalClusterDiscovery"
+        Sid    = "AmazonEKSClusterPolicy"
         Effect = "Allow"
         Action = [
           "autoscaling:DescribeAutoScalingGroups",
+          "autoscaling:UpdateAutoScalingGroup",
+          "ec2:AttachVolume",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:CreateRoute",
+          "ec2:CreateSecurityGroup",
+          "ec2:CreateTags",
+          "ec2:CreateVolume",
+          "ec2:DeleteRoute",
+          "ec2:DeleteSecurityGroup",
+          "ec2:DeleteVolume",
           "ec2:DescribeInstances",
           "ec2:DescribeRouteTables",
           "ec2:DescribeSecurityGroups",
           "ec2:DescribeSubnets",
           "ec2:DescribeVolumes",
           "ec2:DescribeVolumesModifications",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeDhcpOptions",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DetachVolume",
+          "ec2:ModifyInstanceAttribute",
+          "ec2:ModifyVolume",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:DescribeAccountAttributes",
+          "ec2:DescribeAddresses",
+          "ec2:DescribeInternetGateways",
+          "ec2:DescribeInstanceTopology",
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+          "elasticloadbalancing:AttachLoadBalancerToSubnets",
+          "elasticloadbalancing:ConfigureHealthCheck",
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:CreateLoadBalancer",
+          "elasticloadbalancing:CreateLoadBalancerListeners",
+          "elasticloadbalancing:CreateLoadBalancerPolicy",
+          "elasticloadbalancing:CreateTargetGroup",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DeleteLoadBalancerListeners",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+          "elasticloadbalancing:DeregisterTargets",
           "elasticloadbalancing:DescribeListeners",
           "elasticloadbalancing:DescribeLoadBalancerAttributes",
           "elasticloadbalancing:DescribeLoadBalancerPolicies",
@@ -442,81 +479,6 @@ resource "aws_iam_policy" "eks_cluster_boundary" {
           "elasticloadbalancing:DescribeTargetGroupAttributes",
           "elasticloadbalancing:DescribeTargetGroups",
           "elasticloadbalancing:DescribeTargetHealth",
-        ]
-        Resource  = ["*"]
-        Condition = { StringEquals = { "aws:RequestedRegion" = var.aws_region } }
-      },
-      {
-        Sid      = "CreateTaggedClusterNetwork"
-        Effect   = "Allow"
-        Action   = ["ec2:CreateSecurityGroup", "ec2:CreateVolume"]
-        Resource = concat(local.network_arns, ["arn:aws:ec2:${local.regional_arn}:volume/*"])
-        Condition = { StringEquals = {
-          "aws:RequestTag/Project"     = var.project_name
-          "aws:RequestTag/Environment" = each.key
-        } }
-      },
-      {
-        Sid    = "ManageOwnedClusterNetwork"
-        Effect = "Allow"
-        Action = [
-          "ec2:AttachVolume",
-          "ec2:AuthorizeSecurityGroupIngress",
-          "ec2:CreateRoute",
-          "ec2:CreateTags",
-          "ec2:DeleteRoute",
-          "ec2:DeleteSecurityGroup",
-          "ec2:DeleteVolume",
-          "ec2:DetachVolume",
-          "ec2:ModifyInstanceAttribute",
-          "ec2:ModifyVolume",
-          "ec2:RevokeSecurityGroupIngress",
-        ]
-        Resource = concat(local.network_arns, [
-          "arn:aws:ec2:${local.regional_arn}:instance/*",
-          "arn:aws:ec2:${local.regional_arn}:network-interface/*",
-          "arn:aws:ec2:${local.regional_arn}:volume/*",
-        ])
-        Condition = { StringEquals = {
-          "aws:ResourceTag/Project"     = var.project_name
-          "aws:ResourceTag/Environment" = each.key
-        } }
-      },
-      {
-        Sid    = "CreateTaggedClusterLoadBalancing"
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:CreateListener",
-          "elasticloadbalancing:CreateLoadBalancer",
-          "elasticloadbalancing:CreateLoadBalancerListeners",
-          "elasticloadbalancing:CreateLoadBalancerPolicy",
-          "elasticloadbalancing:CreateTargetGroup",
-        ]
-        Resource = [
-          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener/*",
-          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener-rule/*",
-          "arn:aws:elasticloadbalancing:${local.regional_arn}:loadbalancer/*",
-          "arn:aws:elasticloadbalancing:${local.regional_arn}:targetgroup/*",
-        ]
-        Condition = { StringEquals = {
-          "aws:RequestTag/Project"     = var.project_name
-          "aws:RequestTag/Environment" = each.key
-        } }
-      },
-      {
-        Sid    = "ManageOwnedClusterLoadBalancing"
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:AddTags",
-          "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
-          "elasticloadbalancing:AttachLoadBalancerToSubnets",
-          "elasticloadbalancing:ConfigureHealthCheck",
-          "elasticloadbalancing:DeleteListener",
-          "elasticloadbalancing:DeleteLoadBalancer",
-          "elasticloadbalancing:DeleteLoadBalancerListeners",
-          "elasticloadbalancing:DeleteTargetGroup",
-          "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
-          "elasticloadbalancing:DeregisterTargets",
           "elasticloadbalancing:DetachLoadBalancerFromSubnets",
           "elasticloadbalancing:ModifyListener",
           "elasticloadbalancing:ModifyLoadBalancerAttributes",
@@ -526,23 +488,33 @@ resource "aws_iam_policy" "eks_cluster_boundary" {
           "elasticloadbalancing:RegisterTargets",
           "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
           "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+          "kms:DescribeKey",
         ]
-        Resource = [
-          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener/*",
-          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener-rule/*",
-          "arn:aws:elasticloadbalancing:${local.regional_arn}:loadbalancer/*",
-          "arn:aws:elasticloadbalancing:${local.regional_arn}:targetgroup/*",
-        ]
+        Resource = ["*"]
+      },
+      {
+        Sid      = "AmazonEKSClusterPolicySLRCreate"
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole"]
+        Resource = ["*"]
         Condition = { StringEquals = {
-          "aws:ResourceTag/Project"     = var.project_name
-          "aws:ResourceTag/Environment" = each.key
+          "iam:AWSServiceName" = "elasticloadbalancing.amazonaws.com"
         } }
       },
       {
-        Sid      = "ScaleOwnedNodeGroups"
+        Sid      = "AmazonEKSClusterPolicyENIDelete"
         Effect   = "Allow"
-        Action   = ["autoscaling:UpdateAutoScalingGroup"]
-        Resource = ["arn:aws:autoscaling:${local.regional_arn}:autoScalingGroup:*:autoScalingGroupName/${var.project_name}-${each.key}-*"]
+        Action   = ["ec2:DeleteNetworkInterface"]
+        Resource = ["*"]
+        Condition = { StringEquals = {
+          "ec2:ResourceTag/eks:eni:owner" = "amazon-vpc-cni"
+        } }
+      },
+      {
+        Sid      = "ProtectTerraformStateKey"
+        Effect   = "Deny"
+        Action   = ["kms:DescribeKey"]
+        Resource = [var.state_kms_key_arn]
       },
     ]
   })
@@ -557,68 +529,71 @@ resource "aws_iam_policy" "eks_node_boundary" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "RegionalNodeDiscovery"
+        Sid    = "AmazonEKSWorkerNodePolicy"
         Effect = "Allow"
         Action = [
           "ec2:DescribeInstances",
           "ec2:DescribeInstanceTypes",
-          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeSecurityGroups",
           "ec2:DescribeSubnets",
-          "ec2:DescribeTags",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeVolumesModifications",
+          "ec2:DescribeVpcs",
+          "eks:DescribeCluster",
+          "eks-auth:AssumeRoleForPodIdentity",
         ]
-        Resource  = ["*"]
-        Condition = { StringEquals = { "aws:RequestedRegion" = var.aws_region } }
-      },
-      {
-        Sid      = "UseOwnCluster"
-        Effect   = "Allow"
-        Action   = ["eks:DescribeCluster", "eks-auth:AssumeRoleForPodIdentity"]
-        Resource = [local.cluster_arns[each.key]]
-      },
-      {
-        Sid      = "RequestRegistryAuthorization"
-        Effect   = "Allow"
-        Action   = ["ecr:GetAuthorizationToken"]
         Resource = ["*"]
-        Condition = { StringEquals = {
-          "aws:RequestedRegion" = var.aws_region
-        } }
       },
       {
-        Sid      = "PullProjectImages"
-        Effect   = "Allow"
-        Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:DescribeImages", "ecr:GetDownloadUrlForLayer"]
-        Resource = [local.ecr_arn]
-      },
-      {
-        Sid    = "CreateOwnedNetworkInterfaces"
-        Effect = "Allow"
-        Action = ["ec2:CreateNetworkInterface", "ec2:CreateTags"]
-        Resource = [
-          "arn:aws:ec2:${local.regional_arn}:network-interface/*",
-          "arn:aws:ec2:${local.regional_arn}:security-group/*",
-          "arn:aws:ec2:${local.regional_arn}:subnet/*",
-        ]
-        Condition = { StringEquals = {
-          "aws:RequestTag/cluster.k8s.amazonaws.com/name" = "${var.project_name}-${each.key}"
-        } }
-      },
-      {
-        Sid    = "ManageOwnedNetworkInterfaces"
+        Sid    = "AmazonEKSCNIPolicy"
         Effect = "Allow"
         Action = [
           "ec2:AssignPrivateIpAddresses",
           "ec2:AttachNetworkInterface",
-          "ec2:CreateTags",
+          "ec2:CreateNetworkInterface",
           "ec2:DeleteNetworkInterface",
+          "ec2:DescribeInstances",
+          "ec2:DescribeTags",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
           "ec2:DetachNetworkInterface",
           "ec2:ModifyNetworkInterfaceAttribute",
           "ec2:UnassignPrivateIpAddresses",
         ]
+        Resource = ["*"]
+      },
+      {
+        Sid      = "AmazonEKSCNIPolicyENITag"
+        Effect   = "Allow"
+        Action   = ["ec2:CreateTags"]
         Resource = ["arn:aws:ec2:${local.regional_arn}:network-interface/*"]
-        Condition = { StringEquals = {
-          "aws:ResourceTag/cluster.k8s.amazonaws.com/name" = "${var.project_name}-${each.key}"
-        } }
+      },
+      {
+        Sid      = "AmazonEC2ContainerRegistryAuthorization"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = ["*"]
+      },
+      {
+        Sid    = "AmazonEC2ContainerRegistryReadOnly"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage",
+          "ecr:GetLifecyclePolicy",
+          "ecr:GetLifecyclePolicyPreview",
+          "ecr:ListTagsForResource",
+          "ecr:DescribeImageScanFindings",
+        ]
+        Resource = [local.ecr_arn]
       },
     ]
   })

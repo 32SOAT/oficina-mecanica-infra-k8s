@@ -284,32 +284,171 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
   }
 
   assert {
-    condition = (
-      alltrue([for boundary in values(aws_iam_policy.eks_cluster_boundary) :
-        alltrue([for required in ["ec2:CreateTags", "ec2:CreateVolume", "elasticloadbalancing:CreateLoadBalancer"] :
-          anytrue([for statement in jsondecode(boundary.policy).Statement : contains(statement.Action, required)])
-        ])
+    condition = alltrue([for boundary in values(aws_iam_policy.eks_cluster_boundary) :
+      length([for statement in jsondecode(boundary.policy).Statement : statement if statement.Sid == "AmazonEKSClusterPolicy"]) == 1 &&
+      toset(one([for statement in jsondecode(boundary.policy).Statement : statement.Action if statement.Sid == "AmazonEKSClusterPolicy"])) == toset([
+        "autoscaling:DescribeAutoScalingGroups",
+        "autoscaling:UpdateAutoScalingGroup",
+        "ec2:AttachVolume",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CreateRoute",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateTags",
+        "ec2:CreateVolume",
+        "ec2:DeleteRoute",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteVolume",
+        "ec2:DescribeInstances",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeVolumesModifications",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeDhcpOptions",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DetachVolume",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyVolume",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:DescribeAccountAttributes",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeInstanceTopology",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+        "elasticloadbalancing:AttachLoadBalancerToSubnets",
+        "elasticloadbalancing:ConfigureHealthCheck",
+        "elasticloadbalancing:CreateListener",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "elasticloadbalancing:CreateLoadBalancerListeners",
+        "elasticloadbalancing:CreateLoadBalancerPolicy",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:DeleteLoadBalancerListeners",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:DescribeListeners",
+        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+        "elasticloadbalancing:DescribeLoadBalancerPolicies",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTargetGroupAttributes",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+        "elasticloadbalancing:ModifyListener",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
+        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+        "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        "kms:DescribeKey",
       ]) &&
-      alltrue([for boundary in values(aws_iam_policy.eks_node_boundary) :
-        alltrue([for required in ["ec2:CreateNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:CreateTags", "eks:DescribeCluster", "ecr:GetDownloadUrlForLayer"] :
-          anytrue([for statement in jsondecode(boundary.policy).Statement : contains(statement.Action, required)])
-        ])
-      ])
-    )
-    error_message = "Cluster and node boundaries must preserve essential AmazonEKSClusterPolicy and AmazonEKS_CNI_Policy permissions."
+      one([for statement in jsondecode(boundary.policy).Statement : statement.Resource if statement.Sid == "AmazonEKSClusterPolicy"]) == ["*"] &&
+      !can(one([for statement in jsondecode(boundary.policy).Statement : statement if statement.Sid == "AmazonEKSClusterPolicy"]).Condition)
+    ])
+    error_message = "The cluster boundary must preserve the complete AmazonEKSClusterPolicy v10 action/resource contract without unsupported tag conditions."
+  }
+
+  assert {
+    condition = alltrue([for boundary in values(aws_iam_policy.eks_cluster_boundary) :
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Effect == "Allow" &&
+        contains(statement.Action, "iam:CreateServiceLinkedRole") &&
+        statement.Resource == ["*"] &&
+        try(statement.Condition.StringEquals["iam:AWSServiceName"], "") == "elasticloadbalancing.amazonaws.com"
+      ]) == 1 &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Effect == "Allow" &&
+        contains(statement.Action, "ec2:DeleteNetworkInterface") &&
+        statement.Resource == ["*"] &&
+        try(statement.Condition.StringEquals["ec2:ResourceTag/eks:eni:owner"], "") == "amazon-vpc-cni"
+      ]) == 1 &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Effect == "Deny" &&
+        statement.Action == ["kms:DescribeKey"] &&
+        statement.Resource == ["arn:aws:kms:us-east-1:123456789012:key/11111111-2222-3333-4444-555555555555"]
+      ]) == 1
+    ])
+    error_message = "Cluster IAM/ENI exceptions must use the official conditions and the Terraform state KMS key must remain explicitly denied."
+  }
+
+  assert {
+    condition = alltrue([for boundary in values(aws_iam_policy.eks_node_boundary) :
+      toset(flatten([for statement in jsondecode(boundary.policy).Statement : statement.Action if statement.Effect == "Allow"])) == toset([
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeVolumesModifications",
+        "ec2:DescribeVpcs",
+        "eks:DescribeCluster",
+        "eks-auth:AssumeRoleForPodIdentity",
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:AttachNetworkInterface",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DescribeTags",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DetachNetworkInterface",
+        "ec2:ModifyNetworkInterfaceAttribute",
+        "ec2:UnassignPrivateIpAddresses",
+        "ec2:CreateTags",
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:GetRepositoryPolicy",
+        "ecr:DescribeRepositories",
+        "ecr:ListImages",
+        "ecr:DescribeImages",
+        "ecr:BatchGetImage",
+        "ecr:GetLifecyclePolicy",
+        "ecr:GetLifecyclePolicyPreview",
+        "ecr:ListTagsForResource",
+        "ecr:DescribeImageScanFindings",
+      ]) &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if statement.Sid == "AmazonEKSWorkerNodePolicy" && statement.Resource == ["*"] && !can(statement.Condition)]) == 1 &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if statement.Sid == "AmazonEKSCNIPolicy" && statement.Resource == ["*"] && !can(statement.Condition)]) == 1 &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Sid == "AmazonEKSCNIPolicyENITag" &&
+        statement.Action == ["ec2:CreateTags"] &&
+        statement.Resource == ["arn:aws:ec2:us-east-1:123456789012:network-interface/*"] &&
+        !can(statement.Condition)
+      ]) == 1
+    ])
+    error_message = "The node boundary must preserve the complete WorkerNode v3, CNI v6 and ECR ReadOnly v3 contract without unsupported tag conditions."
   }
 
   assert {
     condition = alltrue(flatten([for boundaries in [aws_iam_policy.eks_cluster_boundary, aws_iam_policy.eks_node_boundary, aws_iam_policy.application_boundary] : [for stack, boundary in boundaries :
       length(boundary.policy) <= 6144 &&
       alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for action in statement.Action :
-        !contains(["iam", "sts", "rds", "s3", "kms"], split(":", action)[0]) && !strcontains(action, "*")
+        !contains(["sts", "rds", "s3"], split(":", action)[0]) &&
+        !strcontains(action, "*") &&
+        (split(":", action)[0] != "iam" || action == "iam:CreateServiceLinkedRole") &&
+        (split(":", action)[0] != "kms" || action == "kms:DescribeKey")
       ]])) &&
       alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for resource in statement.Resource :
         alltrue([for other_stack in ["shared", "homologacao", "producao"] : other_stack == stack || !strcontains(resource, other_stack)])
       ]]))
     ]]))
-    error_message = "All boundaries must fit IAM quota and exclude administrative, state, KMS, RDS and cross-stack permissions."
+    error_message = "All boundaries must fit IAM quota and exclude wildcard actions, prohibited services, administrative IAM/KMS use and cross-stack ARNs."
+  }
+
+  assert {
+    condition = alltrue([for boundary in values(aws_iam_policy.application_boundary) :
+      alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for action in statement.Action :
+        !contains(["iam", "kms", "sts", "rds", "s3"], split(":", action)[0])
+      ]]))
+    ])
+    error_message = "Application boundaries must not inherit the narrowly scoped IAM/KMS exceptions required only by the EKS cluster role."
   }
 
   assert {
