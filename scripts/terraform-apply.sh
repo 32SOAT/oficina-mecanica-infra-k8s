@@ -9,6 +9,9 @@ source "${script_dir}/lib/terraform-common.sh"
 [[ $# -eq 2 ]] || die 'Uso: terraform-apply.sh <shared|homologacao|producao> <plan-file>'
 stack="$(validate_stack "$1")"
 plan_file="$2"
+if [[ "${plan_file}" != /* ]]; then
+  plan_file="$(pwd)/${plan_file}"
+fi
 [[ -f "${plan_file}" && ! -L "${plan_file}" ]] || die "Arquivo de plan regular ausente: ${plan_file}"
 [[ -f "${plan_file}.stack" && ! -L "${plan_file}.stack" ]] || die "Marker de stack ausente: ${plan_file}.stack"
 [[ "$(<"${plan_file}.stack")" == "${stack}" ]] || die 'Marker de stack não corresponde ao plan selecionado'

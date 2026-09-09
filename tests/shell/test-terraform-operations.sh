@@ -26,6 +26,16 @@ printf '%s\n' "$@" >>"${FAKE_TERRAFORM_ARGUMENTS:?}"
 
 arguments=("$@")
 for ((index = 0; index < ${#arguments[@]}; index++)); do
+  if [[ "${arguments[index]}" == 'apply' ]]; then
+    plan_argument="${arguments[${#arguments[@]} - 1]}"
+    if [[ "${plan_argument}" != /* ]]; then
+      printf 'FAIL: apply recebeu caminho relativo de plan\n' >&2
+      exit 42
+    fi
+  fi
+done
+
+for ((index = 0; index < ${#arguments[@]}; index++)); do
   if [[ "${arguments[index]}" == 'state' && "${arguments[index + 1]:-}" == 'list' ]]; then
     printf '%s\n' 'aws_vpc.this' 'aws_subnet.private[0]'
     exit 0
@@ -115,6 +125,12 @@ grep -Fxq -- "-chdir=${repo_root}/environments/homologacao" "${terraform_argumen
 grep -Fxq -- 'apply' "${terraform_arguments}"
 grep -Fxq -- '-input=false' "${terraform_arguments}"
 grep -Fxq -- "${plan_file}" "${terraform_arguments}"
+
+# A plan accepted from the caller's directory must stay addressable after -chdir.
+relative_plan='relative.tfplan'
+: >"${relative_plan}"
+printf '%s\n' 'homologacao' >"${relative_plan}.stack"
+TF_ALLOW_LOCAL_APPLY=1 bash "${repo_root}/scripts/terraform-apply.sh" homologacao "${relative_plan}"
 
 # An arbitrary output name must be refused before it can reach Terraform.
 if bash "${repo_root}/scripts/terraform-output.sh" shared db_password; then
