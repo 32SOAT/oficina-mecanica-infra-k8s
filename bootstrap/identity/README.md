@@ -57,9 +57,20 @@ producao environment while retaining the read-only plan permissions.
   `AmazonEC2ContainerRegistryReadOnly` v3 actions scoped to the project ECR where
   resource-level authorization is available. The inherent `Resource = "*"`
   scope of EKS/EC2 discovery and CNI mutations is preserved so the boundaries do
-  not nullify their attached AWS policies. Neither maximum grants STS, RDS, S3,
-  KMS use beyond `DescribeKey`, nor IAM beyond the conditioned ELB service-linked
-  role creation. Controllers cannot remove, modify, version or delete a boundary.
+  not nullify their attached AWS policies. Explicit denies isolate supported
+  EC2, ELB, Auto Scaling and ENI mutations whenever a target is identified by
+  `Project = project_name` and an `Environment` different from the boundary's
+  stack. The denies require the Environment tag to exist, so own-stack and
+  untagged resources remain operable. Security-group and ENI creation is also
+  denied through an existing VPC, subnet or security group tagged for another
+  stack; listener and load-balancer-policy creation is denied on an existing
+  load balancer tagged for another stack. AWS does not expose a guaranteed
+  existing resource-tag context for every create call, so new load balancers,
+  target groups and resources whose parents are untagged remain outside this
+  guardrail until ownership tags exist.
+  Neither maximum grants STS, RDS, S3, KMS use beyond `DescribeKey`, nor IAM
+  beyond the conditioned ELB service-linked role creation. Controllers cannot
+  remove, modify, version or delete a boundary.
   `permissions_boundary_arns` exposes an
   unambiguous `eks_cluster`, `eks_node` and `application` ARN for every stack so
   downstream modules can apply the correct contract. Role and instance-profile

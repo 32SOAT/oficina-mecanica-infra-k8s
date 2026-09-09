@@ -516,6 +516,96 @@ resource "aws_iam_policy" "eks_cluster_boundary" {
         Action   = ["kms:DescribeKey"]
         Resource = [var.state_kms_key_arn]
       },
+      {
+        Sid    = "DenyCrossStackEC2Mutations"
+        Effect = "Deny"
+        Action = [
+          "ec2:AttachVolume",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:CreateRoute",
+          "ec2:CreateTags",
+          "ec2:DeleteNetworkInterface",
+          "ec2:DeleteRoute",
+          "ec2:DeleteSecurityGroup",
+          "ec2:DeleteVolume",
+          "ec2:DetachVolume",
+          "ec2:ModifyInstanceAttribute",
+          "ec2:ModifyVolume",
+          "ec2:RevokeSecurityGroupIngress",
+        ]
+        Resource = [
+          "arn:aws:ec2:${local.regional_arn}:instance/*",
+          "arn:aws:ec2:${local.regional_arn}:network-interface/*",
+          "arn:aws:ec2:${local.regional_arn}:route-table/*",
+          "arn:aws:ec2:${local.regional_arn}:security-group/*",
+          "arn:aws:ec2:${local.regional_arn}:volume/*",
+        ]
+        Condition = {
+          StringEquals    = { "aws:ResourceTag/Project" = var.project_name }
+          StringNotEquals = { "aws:ResourceTag/Environment" = each.key }
+          Null            = { "aws:ResourceTag/Environment" = "false" }
+        }
+      },
+      {
+        Sid    = "DenyCrossStackELBMutations"
+        Effect = "Deny"
+        Action = [
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+          "elasticloadbalancing:AttachLoadBalancerToSubnets",
+          "elasticloadbalancing:ConfigureHealthCheck",
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:CreateLoadBalancerListeners",
+          "elasticloadbalancing:CreateLoadBalancerPolicy",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DeleteLoadBalancerListeners",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:ModifyTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+          "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        ]
+        Resource = [
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener/*",
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:loadbalancer/*",
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:targetgroup/*",
+        ]
+        Condition = {
+          StringEquals    = { "aws:ResourceTag/Project" = var.project_name }
+          StringNotEquals = { "aws:ResourceTag/Environment" = each.key }
+          Null            = { "aws:ResourceTag/Environment" = "false" }
+        }
+      },
+      {
+        Sid      = "DenyCrossStackSecurityGroupCreationParent"
+        Effect   = "Deny"
+        Action   = ["ec2:CreateSecurityGroup"]
+        Resource = ["arn:aws:ec2:${local.regional_arn}:vpc/*"]
+        Condition = {
+          StringEquals    = { "aws:ResourceTag/Project" = var.project_name }
+          StringNotEquals = { "aws:ResourceTag/Environment" = each.key }
+          Null            = { "aws:ResourceTag/Environment" = "false" }
+        }
+      },
+      {
+        Sid      = "DenyCrossStackAutoScalingMutation"
+        Effect   = "Deny"
+        Action   = ["autoscaling:UpdateAutoScalingGroup"]
+        Resource = ["arn:aws:autoscaling:${local.regional_arn}:autoScalingGroup:*:autoScalingGroupName/*"]
+        Condition = {
+          StringEquals    = { "aws:ResourceTag/Project" = var.project_name }
+          StringNotEquals = { "aws:ResourceTag/Environment" = each.key }
+          Null            = { "aws:ResourceTag/Environment" = "false" }
+        }
+      },
     ]
   })
 }
@@ -594,6 +684,42 @@ resource "aws_iam_policy" "eks_node_boundary" {
           "ecr:DescribeImageScanFindings",
         ]
         Resource = [local.ecr_arn]
+      },
+      {
+        Sid    = "DenyCrossStackENIMutations"
+        Effect = "Deny"
+        Action = [
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:AttachNetworkInterface",
+          "ec2:CreateTags",
+          "ec2:DeleteNetworkInterface",
+          "ec2:DetachNetworkInterface",
+          "ec2:ModifyNetworkInterfaceAttribute",
+          "ec2:UnassignPrivateIpAddresses",
+        ]
+        Resource = [
+          "arn:aws:ec2:${local.regional_arn}:instance/*",
+          "arn:aws:ec2:${local.regional_arn}:network-interface/*",
+        ]
+        Condition = {
+          StringEquals    = { "aws:ResourceTag/Project" = var.project_name }
+          StringNotEquals = { "aws:ResourceTag/Environment" = each.key }
+          Null            = { "aws:ResourceTag/Environment" = "false" }
+        }
+      },
+      {
+        Sid    = "DenyCrossStackENICreationParents"
+        Effect = "Deny"
+        Action = ["ec2:CreateNetworkInterface"]
+        Resource = [
+          "arn:aws:ec2:${local.regional_arn}:security-group/*",
+          "arn:aws:ec2:${local.regional_arn}:subnet/*",
+        ]
+        Condition = {
+          StringEquals    = { "aws:ResourceTag/Project" = var.project_name }
+          StringNotEquals = { "aws:ResourceTag/Environment" = each.key }
+          Null            = { "aws:ResourceTag/Environment" = "false" }
+        }
       },
     ]
   })

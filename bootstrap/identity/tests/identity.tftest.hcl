@@ -427,6 +427,129 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
   }
 
   assert {
+    condition = alltrue([for stack, boundary in aws_iam_policy.eks_cluster_boundary :
+      length([for statement in jsondecode(boundary.policy).Statement : statement if statement.Sid == "DenyCrossStackEC2Mutations"]) == 1 &&
+      toset(one([for statement in jsondecode(boundary.policy).Statement : statement.Action if statement.Sid == "DenyCrossStackEC2Mutations"])) == toset([
+        "ec2:AttachVolume",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CreateRoute",
+        "ec2:CreateTags",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DeleteRoute",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteVolume",
+        "ec2:DetachVolume",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyVolume",
+        "ec2:RevokeSecurityGroupIngress",
+      ]) &&
+      toset(one([for statement in jsondecode(boundary.policy).Statement : statement.Resource if statement.Sid == "DenyCrossStackEC2Mutations"])) == toset([
+        "arn:aws:ec2:us-east-1:123456789012:instance/*",
+        "arn:aws:ec2:us-east-1:123456789012:network-interface/*",
+        "arn:aws:ec2:us-east-1:123456789012:route-table/*",
+        "arn:aws:ec2:us-east-1:123456789012:security-group/*",
+        "arn:aws:ec2:us-east-1:123456789012:volume/*",
+      ]) &&
+      try(one([for statement in jsondecode(boundary.policy).Statement : statement if statement.Sid == "DenyCrossStackEC2Mutations"]).Condition.StringEquals["aws:ResourceTag/Project"], "") == "oficina-mecanica" &&
+      try(one([for statement in jsondecode(boundary.policy).Statement : statement if statement.Sid == "DenyCrossStackEC2Mutations"]).Condition.StringNotEquals["aws:ResourceTag/Environment"], "") == stack &&
+      try(one([for statement in jsondecode(boundary.policy).Statement : statement if statement.Sid == "DenyCrossStackEC2Mutations"]).Condition.Null["aws:ResourceTag/Environment"], "") == "false" &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Sid == "DenyCrossStackSecurityGroupCreationParent" &&
+        statement.Effect == "Deny" &&
+        statement.Action == ["ec2:CreateSecurityGroup"] &&
+        statement.Resource == ["arn:aws:ec2:us-east-1:123456789012:vpc/*"] &&
+        try(statement.Condition.StringEquals["aws:ResourceTag/Project"], "") == "oficina-mecanica" &&
+        try(statement.Condition.StringNotEquals["aws:ResourceTag/Environment"], "") == stack &&
+        try(statement.Condition.Null["aws:ResourceTag/Environment"], "") == "false"
+      ]) == 1 &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Sid == "DenyCrossStackELBMutations" &&
+        statement.Effect == "Deny" &&
+        toset(statement.Action) == toset([
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+          "elasticloadbalancing:AttachLoadBalancerToSubnets",
+          "elasticloadbalancing:ConfigureHealthCheck",
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:CreateLoadBalancerListeners",
+          "elasticloadbalancing:CreateLoadBalancerPolicy",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DeleteLoadBalancerListeners",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:ModifyTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+          "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        ]) &&
+        toset(statement.Resource) == toset([
+          "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/*",
+          "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/*",
+          "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/*",
+        ]) &&
+        try(statement.Condition.StringEquals["aws:ResourceTag/Project"], "") == "oficina-mecanica" &&
+        try(statement.Condition.StringNotEquals["aws:ResourceTag/Environment"], "") == stack &&
+        try(statement.Condition.Null["aws:ResourceTag/Environment"], "") == "false"
+      ]) == 1 &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Sid == "DenyCrossStackAutoScalingMutation" &&
+        statement.Effect == "Deny" &&
+        statement.Action == ["autoscaling:UpdateAutoScalingGroup"] &&
+        statement.Resource == ["arn:aws:autoscaling:us-east-1:123456789012:autoScalingGroup:*:autoScalingGroupName/*"] &&
+        try(statement.Condition.StringEquals["aws:ResourceTag/Project"], "") == "oficina-mecanica" &&
+        try(statement.Condition.StringNotEquals["aws:ResourceTag/Environment"], "") == stack &&
+        try(statement.Condition.Null["aws:ResourceTag/Environment"], "") == "false"
+      ]) == 1
+    ])
+    error_message = "Cluster Resource * allows must be counterbalanced by supported resource-tag denies for EC2, ELB and Auto Scaling resources explicitly owned by another stack."
+  }
+
+  assert {
+    condition = alltrue([for stack, boundary in aws_iam_policy.eks_node_boundary :
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Sid == "DenyCrossStackENIMutations" &&
+        statement.Effect == "Deny" &&
+        toset(statement.Action) == toset([
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:AttachNetworkInterface",
+          "ec2:CreateTags",
+          "ec2:DeleteNetworkInterface",
+          "ec2:DetachNetworkInterface",
+          "ec2:ModifyNetworkInterfaceAttribute",
+          "ec2:UnassignPrivateIpAddresses",
+        ]) &&
+        toset(statement.Resource) == toset([
+          "arn:aws:ec2:us-east-1:123456789012:instance/*",
+          "arn:aws:ec2:us-east-1:123456789012:network-interface/*",
+        ]) &&
+        try(statement.Condition.StringEquals["aws:ResourceTag/Project"], "") == "oficina-mecanica" &&
+        try(statement.Condition.StringNotEquals["aws:ResourceTag/Environment"], "") == stack &&
+        try(statement.Condition.Null["aws:ResourceTag/Environment"], "") == "false"
+      ]) == 1 &&
+      length([for statement in jsondecode(boundary.policy).Statement : statement if
+        statement.Sid == "DenyCrossStackENICreationParents" &&
+        statement.Effect == "Deny" &&
+        statement.Action == ["ec2:CreateNetworkInterface"] &&
+        toset(statement.Resource) == toset([
+          "arn:aws:ec2:us-east-1:123456789012:security-group/*",
+          "arn:aws:ec2:us-east-1:123456789012:subnet/*",
+        ]) &&
+        try(statement.Condition.StringEquals["aws:ResourceTag/Project"], "") == "oficina-mecanica" &&
+        try(statement.Condition.StringNotEquals["aws:ResourceTag/Environment"], "") == stack &&
+        try(statement.Condition.Null["aws:ResourceTag/Environment"], "") == "false"
+      ]) == 1
+    ])
+    error_message = "Node Resource * allows must deny mutations of tagged ENIs/instances and ENI creation through tagged network parents owned by another stack."
+  }
+
+  assert {
     condition = alltrue(flatten([for boundaries in [aws_iam_policy.eks_cluster_boundary, aws_iam_policy.eks_node_boundary, aws_iam_policy.application_boundary] : [for stack, boundary in boundaries :
       length(boundary.policy) <= 6144 &&
       alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for action in statement.Action :
