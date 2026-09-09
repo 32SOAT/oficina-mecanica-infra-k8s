@@ -41,12 +41,21 @@ producao environment while retaining the read-only plan permissions.
   controllers. EKS service roles use `${project_name}-${stack}-eks-*`. Managed
   policy attachment is limited to the four enumerated EKS/node policies;
   `PassRole` is limited to these service roles and EKS/EC2 service principals.
-  CreateRole, trust/inline-policy changes and managed-policy attachment require
-  the exact `${project_name}-${stack}-runtime-boundary` permissions boundary.
-  The boundary is owned by this bootstrap, caps future runtime roles at regional
-  discovery, the exact stack cluster and project ECR pull, and grants no IAM,
-  STS, RDS, S3/state or KMS access. Controllers cannot remove, modify, version or
-  delete it. Role and instance-profile reads remain scoped to the stack prefix.
+  CreateRole and trust/inline-policy changes require one of three exact,
+  bootstrap-owned boundaries: `${project_name}-${stack}-eks-cluster-boundary`
+  for `${project_name}-${stack}-eks-cluster`,
+  `${project_name}-${stack}-eks-node-boundary` for
+  `${project_name}-${stack}-eks-node`, or
+  `${project_name}-${stack}-runtime-boundary` for other current and future stack
+  roles. EKS managed-policy attachment is split across the exact cluster and
+  node roles and requires their matching boundary. The cluster maximum includes
+  its tagged EC2, autoscaling and load-balancing operations; the node maximum
+  includes tagged CNI networking, exact-cluster discovery and project ECR pull.
+  None grants IAM, STS, RDS, S3/state or KMS access. Controllers cannot remove,
+  modify, version or delete a boundary. `permissions_boundary_arns` exposes an
+  unambiguous `eks_cluster`, `eks_node` and `application` ARN for every stack so
+  downstream modules can apply the correct contract. Role and instance-profile
+  reads remain scoped to the stack prefix.
 - Network resources and EKS creation must carry `Project = project_name` and
   `Environment = stack`. Network parents, updates and deletion enforce those
   ownership tags. Existing resources must receive those tags through the approved

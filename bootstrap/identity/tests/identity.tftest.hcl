@@ -271,70 +271,116 @@ run "service_permissions_separate_stacks_and_destroy" {
   }
 }
 
-run "runtime_permissions_boundaries_prevent_role_escape" {
+run "role_specific_permissions_boundaries_are_compatible_and_protected" {
   command = plan
 
   assert {
     condition = (
-      toset(keys(aws_iam_policy.runtime_boundary)) == toset(["shared", "homologacao", "producao"]) &&
-      alltrue([for stack, boundary in aws_iam_policy.runtime_boundary :
-        boundary.name == "oficina-mecanica-${stack}-runtime-boundary" &&
-        length(boundary.policy) <= 6144 &&
-        alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for action in statement.Action :
-          !contains(["iam", "sts", "rds", "s3", "kms"], split(":", action)[0]) &&
-          !strcontains(action, "*") &&
-          action != "AdministratorAccess"
-        ]])) &&
-        alltrue([for statement in jsondecode(boundary.policy).Statement :
-          !contains(statement.Resource, "*") || (
-            try(statement.Condition.StringEquals["aws:RequestedRegion"], "") == "us-east-1" &&
-            alltrue([for action in statement.Action : startswith(action, "ec2:Describe") || action == "ecr:GetAuthorizationToken"])
-          )
-        ]) &&
-        alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for resource in statement.Resource :
-          alltrue([for other_stack in ["shared", "homologacao", "producao"] :
-            other_stack == stack || !strcontains(resource, other_stack)
-          ])
-        ]]))
-      ])
+      toset(keys(aws_iam_policy.eks_cluster_boundary)) == toset(["shared", "homologacao", "producao"]) &&
+      toset(keys(aws_iam_policy.eks_node_boundary)) == toset(["shared", "homologacao", "producao"]) &&
+      toset(keys(aws_iam_policy.application_boundary)) == toset(["shared", "homologacao", "producao"])
     )
-    error_message = "Each stack needs a bootstrap-managed runtime boundary without IAM, STS, RDS, state, KMS, admin or cross-stack permissions."
+    error_message = "Each stack needs separate bootstrap-managed EKS cluster, EKS node/CNI and application boundaries."
   }
 
   assert {
-    condition = alltrue([for stack, policy in aws_iam_role_policy.apply :
-      alltrue([for action in ["iam:CreateRole", "iam:PutRolePermissionsBoundary", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"] :
-        length([for statement in jsondecode(policy.policy).Statement : statement if contains(statement.Action, action)]) == 1 &&
-        alltrue([for statement in jsondecode(policy.policy).Statement :
-          !contains(statement.Action, action) || (
-            statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-*"] &&
-            try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-runtime-boundary"
-          )
+    condition = (
+      alltrue([for boundary in values(aws_iam_policy.eks_cluster_boundary) :
+        alltrue([for required in ["ec2:CreateTags", "ec2:CreateVolume", "elasticloadbalancing:CreateLoadBalancer"] :
+          anytrue([for statement in jsondecode(boundary.policy).Statement : contains(statement.Action, required)])
         ])
       ]) &&
-      alltrue([for statement in jsondecode(policy.policy).Statement :
-        !contains(statement.Action, "iam:AttachRolePolicy") || (
-          statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-*"] &&
-          try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-runtime-boundary"
-        )
+      alltrue([for boundary in values(aws_iam_policy.eks_node_boundary) :
+        alltrue([for required in ["ec2:CreateNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:CreateTags", "eks:DescribeCluster", "ecr:GetDownloadUrlForLayer"] :
+          anytrue([for statement in jsondecode(boundary.policy).Statement : contains(statement.Action, required)])
+        ])
       ])
-    ])
-    error_message = "Role creation and policy attachment must require the exact stack role prefix and permissions boundary."
+    )
+    error_message = "Cluster and node boundaries must preserve essential AmazonEKSClusterPolicy and AmazonEKS_CNI_Policy permissions."
   }
 
   assert {
-    condition = alltrue([for policy in concat(values(aws_iam_role_policy.apply), values(aws_iam_role_policy.destroy), values(aws_iam_policy.network_apply)) :
-      alltrue(flatten([for statement in jsondecode(policy.policy).Statement : [for action in statement.Action :
-        !contains([
-          "iam:DeleteRolePermissionsBoundary",
-          "iam:CreatePolicyVersion",
-          "iam:SetDefaultPolicyVersion",
-          "iam:DeletePolicyVersion",
-          "iam:DeletePolicy",
-        ], action)
+    condition = alltrue(flatten([for boundaries in [aws_iam_policy.eks_cluster_boundary, aws_iam_policy.eks_node_boundary, aws_iam_policy.application_boundary] : [for stack, boundary in boundaries :
+      length(boundary.policy) <= 6144 &&
+      alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for action in statement.Action :
+        !contains(["iam", "sts", "rds", "s3", "kms"], split(":", action)[0]) && !strcontains(action, "*")
+      ]])) &&
+      alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for resource in statement.Resource :
+        alltrue([for other_stack in ["shared", "homologacao", "producao"] : other_stack == stack || !strcontains(resource, other_stack)])
       ]]))
+    ]]))
+    error_message = "All boundaries must fit IAM quota and exclude administrative, state, KMS, RDS and cross-stack permissions."
+  }
+
+  assert {
+    condition = alltrue([for stack, policy in aws_iam_policy.role_delegation :
+      alltrue([for contract in [
+        { role = "arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-eks-cluster", boundary = "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-eks-cluster-boundary" },
+        { role = "arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-eks-node", boundary = "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-eks-node-boundary" },
+        { role = "arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-*", boundary = "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-runtime-boundary" },
+        ] : length([for statement in jsondecode(policy.policy).Statement : statement if
+          statement.Effect == "Allow" &&
+          contains(statement.Action, "iam:CreateRole") &&
+          statement.Resource == [contract.role] &&
+          try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == contract.boundary
+        ]) == 1
+      ])
     ])
-    error_message = "Controllers must not remove boundaries or modify/version/delete their managed policies."
+    error_message = "Role delegation must select the exact protected boundary for cluster, node or future stack roles."
+  }
+
+  assert {
+    condition = alltrue([for stack, policy in aws_iam_policy.role_delegation :
+      alltrue([for contract in [
+        { role = "arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-eks-cluster", boundary = "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-eks-cluster-boundary" },
+        { role = "arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-eks-node", boundary = "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-eks-node-boundary" },
+        ] : length([for statement in jsondecode(policy.policy).Statement : statement if
+          statement.Effect == "Deny" &&
+          contains(statement.Action, "iam:CreateRole") &&
+          statement.Resource == [contract.role] &&
+          try(statement.Condition.ArnNotEquals["iam:PermissionsBoundary"], "") == contract.boundary
+        ]) == 1
+      ])
+    ])
+    error_message = "The wildcard application contract must not let exact EKS roles select another boundary."
+  }
+
+  assert {
+    condition = alltrue([for stack in ["homologacao", "producao"] :
+      length([for statement in jsondecode(aws_iam_policy.role_delegation[stack].policy).Statement : statement if
+        contains(statement.Action, "iam:AttachRolePolicy") &&
+        statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-eks-cluster"] &&
+        try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-eks-cluster-boundary" &&
+        statement.Condition.ArnEquals["iam:PolicyARN"] == ["arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"]
+      ]) == 1 &&
+      length([for statement in jsondecode(aws_iam_policy.role_delegation[stack].policy).Statement : statement if
+        contains(statement.Action, "iam:AttachRolePolicy") &&
+        statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-eks-node"] &&
+        try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-eks-node-boundary" &&
+        toset(statement.Condition.ArnEquals["iam:PolicyARN"]) == toset([
+          "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+          "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+          "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+        ])
+      ]) == 1
+    ])
+    error_message = "Cluster and node managed policies must attach only to their exact roles with their matching boundaries."
+  }
+
+  assert {
+    condition = alltrue([for policy in concat(values(aws_iam_role_policy.apply), values(aws_iam_role_policy.destroy), values(aws_iam_policy.network_apply), values(aws_iam_policy.role_delegation)) :
+      alltrue(flatten([for statement in jsondecode(policy.policy).Statement : [for action in statement.Action : !contains([
+        "iam:DeleteRolePermissionsBoundary", "iam:CreatePolicyVersion", "iam:SetDefaultPolicyVersion", "iam:DeletePolicyVersion", "iam:DeletePolicy",
+      ], action)]]))
+    ])
+    error_message = "Controllers must not remove boundaries or modify, version or delete managed policies."
+  }
+
+  assert {
+    condition = alltrue([for stack, attachment in aws_iam_role_policy_attachment.role_delegation :
+      attachment.role == aws_iam_role.apply[stack].name && attachment.policy_arn == aws_iam_policy.role_delegation[stack].arn
+    ])
+    error_message = "Each apply controller must receive its bootstrap-managed role-delegation policy."
   }
 }
 
@@ -350,8 +396,13 @@ run "outputs_reference_the_managed_identities" {
       output.shared_destroy_role_arn == aws_iam_role.destroy["shared"].arn &&
       output.homologacao_destroy_role_arn == aws_iam_role.destroy["homologacao"].arn &&
       output.producao_destroy_role_arn == aws_iam_role.destroy["producao"].arn
+      && alltrue([for stack in ["shared", "homologacao", "producao"] :
+        output.permissions_boundary_arns[stack].eks_cluster == aws_iam_policy.eks_cluster_boundary[stack].arn &&
+        output.permissions_boundary_arns[stack].eks_node == aws_iam_policy.eks_node_boundary[stack].arn &&
+        output.permissions_boundary_arns[stack].application == aws_iam_policy.application_boundary[stack].arn
+      ])
     )
-    error_message = "The bootstrap outputs must expose the correct managed OIDC and seven role ARNs."
+    error_message = "The bootstrap outputs must expose the managed identities and unambiguous role-specific boundary ARNs."
   }
 }
 
@@ -406,6 +457,15 @@ run "policies_fit_iam_quota_and_bound_global_actions" {
       ])
     ]) && toset(keys(aws_iam_role_policy_attachment.network_apply)) == toset(["homologacao", "producao"])
     error_message = "EC2 managed policies fit 6,144 characters, stay region/account scoped and attach only to environment apply roles."
+  }
+
+  assert {
+    condition = alltrue([for stack, policy in aws_iam_policy.role_delegation :
+      length(policy.policy) <= 6144 &&
+      aws_iam_role_policy_attachment.role_delegation[stack].role == aws_iam_role.apply[stack].name &&
+      aws_iam_role_policy_attachment.role_delegation[stack].policy_arn == policy.arn
+    ])
+    error_message = "Role-delegation managed policies must fit 6,144 characters and attach only to their stack apply role."
   }
 
   assert {

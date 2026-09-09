@@ -3,8 +3,23 @@ locals {
   state_keys   = { for stack in local.stacks : stack => "oficina/infra/${stack}/terraform.tfstate" }
   state_arns   = { for stack, key in local.state_keys : stack => "${var.state_bucket_arn}/${key}" }
   role_arns    = { for stack in local.stacks : stack => "arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-*" }
-  runtime_boundary_arns = { for stack in local.stacks : stack =>
-    "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-runtime-boundary"
+  permissions_boundary_arns = { for stack in local.stacks : stack => {
+    application = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-runtime-boundary"
+    eks_cluster = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-eks-cluster-boundary"
+    eks_node    = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-eks-node-boundary"
+  } }
+  eks_role_arns = { for stack in local.stacks : stack => {
+    cluster = "arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-eks-cluster"
+    node    = "arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-eks-node"
+  } }
+  delegated_role_actions = ["iam:CreateRole", "iam:PutRolePermissionsBoundary", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"]
+  eks_managed_policies_by_role = {
+    cluster = ["arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"]
+    node = [
+      "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+      "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+      "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+    ]
   }
   cluster_arns = { for stack in local.stacks : stack => "arn:aws:eks:${local.regional_arn}:cluster/${var.project_name}-${stack}" }
   ecr_arn      = "arn:aws:ecr:${local.regional_arn}:repository/${var.project_name}-api"
@@ -22,9 +37,7 @@ locals {
   network_read_actions   = ["ec2:DescribeAvailabilityZones", "ec2:DescribeVpcs", "ec2:DescribeSubnets", "ec2:DescribeRouteTables", "ec2:DescribeInternetGateways", "ec2:DescribeAddresses", "ec2:DescribeAddressesAttribute", "ec2:DescribeNatGateways", "ec2:DescribeSecurityGroups", "ec2:DescribeSecurityGroupRules", "ec2:DescribeNetworkInterfaces", "ec2:DescribeTags"]
   eks_read_actions       = ["eks:DescribeCluster", "eks:DescribeNodegroup", "eks:DescribeAddon", "eks:DescribeAccessEntry", "eks:DescribeUpdate", "eks:ListNodegroups", "eks:ListAddons", "eks:ListAccessEntries", "eks:ListAssociatedAccessPolicies", "eks:ListTagsForResource", "eks:ListUpdates"]
   eks_delete_actions     = ["eks:DeleteCluster", "eks:DeleteNodegroup", "eks:DeleteAddon", "eks:DeleteAccessEntry", "eks:DisassociateAccessPolicy"]
-  eks_managed_policies = [for name in ["AmazonEKSClusterPolicy", "AmazonEKSWorkerNodePolicy", "AmazonEKS_CNI_Policy", "AmazonEC2ContainerRegistryReadOnly"] :
-    "arn:aws:iam::aws:policy/${name}"
-  ]
+  eks_managed_policies   = concat(local.eks_managed_policies_by_role.cluster, local.eks_managed_policies_by_role.node)
 
   # S3 bucket keys use the bucket ARN (not the object ARN) as encryption context.
   # GenerateDataKey is required even by plan for SSE-KMS PutObject on .tflock;
@@ -157,16 +170,74 @@ locals {
       Resource = ["arn:aws:ssm:${local.regional_arn}:parameter/oficina/${stack}/*"]
     },
   ] }
-  common_apply = { for stack in local.stacks : stack => [
+  role_delegation = { for stack in local.stacks : stack => [
     {
-      Sid      = "ManageBoundedStackRoles"
+      Sid      = "ManageApplicationRoles"
       Effect   = "Allow"
-      Action   = ["iam:CreateRole", "iam:PutRolePermissionsBoundary", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"]
+      Action   = local.delegated_role_actions
       Resource = [local.role_arns[stack]]
       Condition = { StringEquals = {
-        "iam:PermissionsBoundary" = local.runtime_boundary_arns[stack]
+        "iam:PermissionsBoundary" = local.permissions_boundary_arns[stack].application
       } }
     },
+    {
+      Sid      = "ManageEKSClusterRole"
+      Effect   = "Allow"
+      Action   = local.delegated_role_actions
+      Resource = [local.eks_role_arns[stack].cluster]
+      Condition = { StringEquals = {
+        "iam:PermissionsBoundary" = local.permissions_boundary_arns[stack].eks_cluster
+      } }
+    },
+    {
+      Sid      = "ManageEKSNodeRole"
+      Effect   = "Allow"
+      Action   = local.delegated_role_actions
+      Resource = [local.eks_role_arns[stack].node]
+      Condition = { StringEquals = {
+        "iam:PermissionsBoundary" = local.permissions_boundary_arns[stack].eks_node
+      } }
+    },
+    {
+      Sid      = "RejectWrongEKSClusterBoundary"
+      Effect   = "Deny"
+      Action   = local.delegated_role_actions
+      Resource = [local.eks_role_arns[stack].cluster]
+      Condition = { ArnNotEquals = {
+        "iam:PermissionsBoundary" = local.permissions_boundary_arns[stack].eks_cluster
+      } }
+    },
+    {
+      Sid      = "RejectWrongEKSNodeBoundary"
+      Effect   = "Deny"
+      Action   = local.delegated_role_actions
+      Resource = [local.eks_role_arns[stack].node]
+      Condition = { ArnNotEquals = {
+        "iam:PermissionsBoundary" = local.permissions_boundary_arns[stack].eks_node
+      } }
+    },
+    {
+      Sid      = "AttachEKSClusterPolicy"
+      Effect   = "Allow"
+      Action   = ["iam:AttachRolePolicy"]
+      Resource = [local.eks_role_arns[stack].cluster]
+      Condition = {
+        ArnEquals    = { "iam:PolicyARN" = local.eks_managed_policies_by_role.cluster }
+        StringEquals = { "iam:PermissionsBoundary" = local.permissions_boundary_arns[stack].eks_cluster }
+      }
+    },
+    {
+      Sid      = "AttachEKSNodePolicies"
+      Effect   = "Allow"
+      Action   = ["iam:AttachRolePolicy"]
+      Resource = [local.eks_role_arns[stack].node]
+      Condition = {
+        ArnEquals    = { "iam:PolicyARN" = local.eks_managed_policies_by_role.node }
+        StringEquals = { "iam:PermissionsBoundary" = local.permissions_boundary_arns[stack].eks_node }
+      }
+    },
+  ] }
+  common_apply = { for stack in local.stacks : stack => [
     {
       Sid      = "UpdateStackRoleMetadata"
       Effect   = "Allow"
@@ -276,16 +347,6 @@ locals {
       Resource = ["arn:aws:logs:${local.regional_arn}:log-group:/aws/eks/${var.project_name}-${stack}/cluster", "arn:aws:logs:${local.regional_arn}:log-group:/aws/eks/${var.project_name}-${stack}/cluster:*"]
     },
     {
-      Sid      = "AttachEKSManagedPolicies"
-      Effect   = "Allow"
-      Action   = ["iam:AttachRolePolicy"]
-      Resource = [local.role_arns[stack]]
-      Condition = {
-        ArnEquals    = { "iam:PolicyARN" = local.eks_managed_policies }
-        StringEquals = { "iam:PermissionsBoundary" = local.runtime_boundary_arns[stack] }
-      }
-    },
-    {
       Sid       = "PassEKSServiceRoles"
       Effect    = "Allow"
       Action    = ["iam:PassRole"]
@@ -302,12 +363,12 @@ locals {
   ] }
 }
 
-# This maximum is owned by the administrative bootstrap. Stack controllers can
-# require it on runtime roles but cannot modify, version or delete the policy.
-resource "aws_iam_policy" "runtime_boundary" {
+# These maxima are owned by the administrative bootstrap. Stack controllers can
+# require them on runtime roles but cannot modify, version or delete them.
+resource "aws_iam_policy" "application_boundary" {
   for_each    = local.stacks
   name        = "${var.project_name}-${each.key}-runtime-boundary"
-  description = "Maximum runtime permissions for ${each.key} roles."
+  description = "Maximum application runtime permissions for ${each.key} roles."
   tags        = merge(local.tags, { Stack = each.key })
   policy = jsonencode({
     Version = "2012-10-17"
@@ -350,6 +411,214 @@ resource "aws_iam_policy" "runtime_boundary" {
         Effect   = "Allow"
         Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:DescribeImages", "ecr:GetDownloadUrlForLayer"]
         Resource = [local.ecr_arn]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_policy" "eks_cluster_boundary" {
+  for_each    = local.stacks
+  name        = "${var.project_name}-${each.key}-eks-cluster-boundary"
+  description = "Maximum EKS cluster service permissions for ${each.key}."
+  tags        = merge(local.tags, { Stack = each.key })
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "RegionalClusterDiscovery"
+        Effect = "Allow"
+        Action = [
+          "autoscaling:DescribeAutoScalingGroups",
+          "ec2:DescribeInstances",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeVolumesModifications",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeLoadBalancerAttributes",
+          "elasticloadbalancing:DescribeLoadBalancerPolicies",
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeTargetGroupAttributes",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeTargetHealth",
+        ]
+        Resource  = ["*"]
+        Condition = { StringEquals = { "aws:RequestedRegion" = var.aws_region } }
+      },
+      {
+        Sid      = "CreateTaggedClusterNetwork"
+        Effect   = "Allow"
+        Action   = ["ec2:CreateSecurityGroup", "ec2:CreateVolume"]
+        Resource = concat(local.network_arns, ["arn:aws:ec2:${local.regional_arn}:volume/*"])
+        Condition = { StringEquals = {
+          "aws:RequestTag/Project"     = var.project_name
+          "aws:RequestTag/Environment" = each.key
+        } }
+      },
+      {
+        Sid    = "ManageOwnedClusterNetwork"
+        Effect = "Allow"
+        Action = [
+          "ec2:AttachVolume",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:CreateRoute",
+          "ec2:CreateTags",
+          "ec2:DeleteRoute",
+          "ec2:DeleteSecurityGroup",
+          "ec2:DeleteVolume",
+          "ec2:DetachVolume",
+          "ec2:ModifyInstanceAttribute",
+          "ec2:ModifyVolume",
+          "ec2:RevokeSecurityGroupIngress",
+        ]
+        Resource = concat(local.network_arns, [
+          "arn:aws:ec2:${local.regional_arn}:instance/*",
+          "arn:aws:ec2:${local.regional_arn}:network-interface/*",
+          "arn:aws:ec2:${local.regional_arn}:volume/*",
+        ])
+        Condition = { StringEquals = {
+          "aws:ResourceTag/Project"     = var.project_name
+          "aws:ResourceTag/Environment" = each.key
+        } }
+      },
+      {
+        Sid    = "CreateTaggedClusterLoadBalancing"
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:CreateLoadBalancer",
+          "elasticloadbalancing:CreateLoadBalancerListeners",
+          "elasticloadbalancing:CreateLoadBalancerPolicy",
+          "elasticloadbalancing:CreateTargetGroup",
+        ]
+        Resource = [
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener/*",
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener-rule/*",
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:loadbalancer/*",
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:targetgroup/*",
+        ]
+        Condition = { StringEquals = {
+          "aws:RequestTag/Project"     = var.project_name
+          "aws:RequestTag/Environment" = each.key
+        } }
+      },
+      {
+        Sid    = "ManageOwnedClusterLoadBalancing"
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+          "elasticloadbalancing:AttachLoadBalancerToSubnets",
+          "elasticloadbalancing:ConfigureHealthCheck",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DeleteLoadBalancerListeners",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:ModifyTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+          "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        ]
+        Resource = [
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener/*",
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:listener-rule/*",
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:loadbalancer/*",
+          "arn:aws:elasticloadbalancing:${local.regional_arn}:targetgroup/*",
+        ]
+        Condition = { StringEquals = {
+          "aws:ResourceTag/Project"     = var.project_name
+          "aws:ResourceTag/Environment" = each.key
+        } }
+      },
+      {
+        Sid      = "ScaleOwnedNodeGroups"
+        Effect   = "Allow"
+        Action   = ["autoscaling:UpdateAutoScalingGroup"]
+        Resource = ["arn:aws:autoscaling:${local.regional_arn}:autoScalingGroup:*:autoScalingGroupName/${var.project_name}-${each.key}-*"]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_policy" "eks_node_boundary" {
+  for_each    = local.stacks
+  name        = "${var.project_name}-${each.key}-eks-node-boundary"
+  description = "Maximum EKS node and CNI permissions for ${each.key}."
+  tags        = merge(local.tags, { Stack = each.key })
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "RegionalNodeDiscovery"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeTags",
+        ]
+        Resource  = ["*"]
+        Condition = { StringEquals = { "aws:RequestedRegion" = var.aws_region } }
+      },
+      {
+        Sid      = "UseOwnCluster"
+        Effect   = "Allow"
+        Action   = ["eks:DescribeCluster", "eks-auth:AssumeRoleForPodIdentity"]
+        Resource = [local.cluster_arns[each.key]]
+      },
+      {
+        Sid      = "RequestRegistryAuthorization"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = ["*"]
+        Condition = { StringEquals = {
+          "aws:RequestedRegion" = var.aws_region
+        } }
+      },
+      {
+        Sid      = "PullProjectImages"
+        Effect   = "Allow"
+        Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:DescribeImages", "ecr:GetDownloadUrlForLayer"]
+        Resource = [local.ecr_arn]
+      },
+      {
+        Sid    = "CreateOwnedNetworkInterfaces"
+        Effect = "Allow"
+        Action = ["ec2:CreateNetworkInterface", "ec2:CreateTags"]
+        Resource = [
+          "arn:aws:ec2:${local.regional_arn}:network-interface/*",
+          "arn:aws:ec2:${local.regional_arn}:security-group/*",
+          "arn:aws:ec2:${local.regional_arn}:subnet/*",
+        ]
+        Condition = { StringEquals = {
+          "aws:RequestTag/cluster.k8s.amazonaws.com/name" = "${var.project_name}-${each.key}"
+        } }
+      },
+      {
+        Sid    = "ManageOwnedNetworkInterfaces"
+        Effect = "Allow"
+        Action = [
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:AttachNetworkInterface",
+          "ec2:CreateTags",
+          "ec2:DeleteNetworkInterface",
+          "ec2:DetachNetworkInterface",
+          "ec2:ModifyNetworkInterfaceAttribute",
+          "ec2:UnassignPrivateIpAddresses",
+        ]
+        Resource = ["arn:aws:ec2:${local.regional_arn}:network-interface/*"]
+        Condition = { StringEquals = {
+          "aws:ResourceTag/cluster.k8s.amazonaws.com/name" = "${var.project_name}-${each.key}"
+        } }
       },
     ]
   })
@@ -410,4 +679,21 @@ resource "aws_iam_role_policy_attachment" "network_apply" {
   for_each   = local.environments
   role       = aws_iam_role.apply[each.key].name
   policy_arn = aws_iam_policy.network_apply[each.key].arn
+}
+
+resource "aws_iam_policy" "role_delegation" {
+  for_each    = local.stacks
+  name        = "${var.project_name}-terraform-${each.key}-role-delegation"
+  description = "Boundary-enforced role delegation for ${each.key}."
+  tags        = merge(local.tags, { Stack = each.key })
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = local.role_delegation[each.key]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "role_delegation" {
+  for_each   = local.stacks
+  role       = aws_iam_role.apply[each.key].name
+  policy_arn = aws_iam_policy.role_delegation[each.key].arn
 }
