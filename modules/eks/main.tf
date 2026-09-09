@@ -1,6 +1,6 @@
 data "aws_subnet" "private" {
-  for_each = toset(var.private_subnet_ids)
-  id       = each.value
+  count = length(var.private_subnet_ids)
+  id    = var.private_subnet_ids[count.index]
 }
 
 resource "aws_cloudwatch_log_group" "eks" {
@@ -9,8 +9,9 @@ resource "aws_cloudwatch_log_group" "eks" {
   tags              = local.common_tags
 }
 
-# EKS 1.36 encrypts all Kubernetes API data with envelope encryption by default;
-# a legacy encryption_config is neither required nor configurable for this version.
+# EKS 1.36 encrypts Kubernetes API data with envelope encryption by default.
+# A customer-managed KMS key remains configurable through encryption_config,
+# but it is not required by this module's current contract.
 #trivy:ignore:AWS-0039
 resource "aws_eks_cluster" "this" {
   name                      = local.name_prefix
@@ -41,8 +42,7 @@ resource "aws_eks_cluster" "this" {
 
   depends_on = [
     aws_cloudwatch_log_group.eks,
-    aws_iam_role_policy_attachment.eks_cluster_policy,
-    aws_iam_role_policy_attachment.eks_vpc_resource_controller
+    aws_iam_role_policy_attachment.eks_cluster_policy
   ]
 }
 

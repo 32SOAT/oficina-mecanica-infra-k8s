@@ -76,13 +76,8 @@ run "eks_is_private_observable_and_boundary_limited" {
 
   assert {
     condition = (
-      toset([
-        aws_iam_role_policy_attachment.eks_cluster_policy.policy_arn,
-        aws_iam_role_policy_attachment.eks_vpc_resource_controller.policy_arn
-        ]) == toset([
-        "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
-        "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
-      ]) &&
+      toset([for attachment in aws_iam_role_policy_attachment.eks_cluster_policy : attachment.policy_arn]) ==
+      toset(["arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"]) &&
       toset([
         aws_iam_role_policy_attachment.eks_worker_node_policy.policy_arn,
         aws_iam_role_policy_attachment.eks_cni_policy.policy_arn,

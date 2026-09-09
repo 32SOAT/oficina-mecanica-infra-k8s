@@ -89,12 +89,6 @@ resource "aws_route_table" "public" {
   tags   = merge(local.common_tags, { Name = "${local.name_prefix}-public" })
 }
 
-resource "aws_route" "public" {
-  route_table_id         = aws_route_table.public.id
-  destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.this.id
-}
-
 resource "aws_route_table_association" "public" {
   count = var.az_count
 
@@ -126,12 +120,32 @@ resource "aws_route_table" "private" {
   tags   = merge(local.common_tags, { Name = "${local.name_prefix}-private-${local.azs[count.index]}" })
 }
 
-resource "aws_route" "private" {
-  count = var.az_count
+locals {
+  default_routes = merge(
+    {
+      public = {
+        route_table_id = aws_route_table.public.id
+        gateway_id     = aws_internet_gateway.this.id
+        nat_gateway_id = null
+      }
+    },
+    {
+      for index in range(var.az_count) : "private-${index}" => {
+        route_table_id = aws_route_table.private[index].id
+        gateway_id     = null
+        nat_gateway_id = aws_nat_gateway.this[var.single_nat_gateway ? 0 : index].id
+      }
+    }
+  )
+}
 
-  route_table_id         = aws_route_table.private[count.index].id
+resource "aws_route" "default" {
+  for_each = local.default_routes
+
+  route_table_id         = each.value.route_table_id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.this[var.single_nat_gateway ? 0 : count.index].id
+  gateway_id             = each.value.gateway_id
+  nat_gateway_id         = each.value.nat_gateway_id
 }
 
 resource "aws_route_table_association" "private" {
