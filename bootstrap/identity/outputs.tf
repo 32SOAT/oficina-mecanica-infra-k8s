@@ -4,7 +4,7 @@ output "github_oidc_provider_arn" {
 }
 
 output "plan_role_arn" {
-  description = "PR-only Terraform plan role."
+  description = "Terraform plan role for pull requests and protected environment drift."
   value       = aws_iam_role.plan.arn
 }
 

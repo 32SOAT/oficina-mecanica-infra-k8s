@@ -3,9 +3,13 @@ locals {
   state_keys   = { for stack in local.stacks : stack => "oficina/infra/${stack}/terraform.tfstate" }
   state_arns   = { for stack, key in local.state_keys : stack => "${var.state_bucket_arn}/${key}" }
   role_arns    = { for stack in local.stacks : stack => "arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-*" }
+  runtime_boundary_arns = { for stack in local.stacks : stack =>
+    "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-runtime-boundary"
+  }
+  cluster_arns = { for stack in local.stacks : stack => "arn:aws:eks:${local.regional_arn}:cluster/${var.project_name}-${stack}" }
   ecr_arn      = "arn:aws:ecr:${local.regional_arn}:repository/${var.project_name}-api"
   eks_arns = { for stack in local.environments : stack => [
-    "arn:aws:eks:${local.regional_arn}:cluster/${var.project_name}-${stack}",
+    local.cluster_arns[stack],
     "arn:aws:eks:${local.regional_arn}:nodegroup/${var.project_name}-${stack}/*",
     "arn:aws:eks:${local.regional_arn}:addon/${var.project_name}-${stack}/*",
     "arn:aws:eks:${local.regional_arn}:access-entry/${var.project_name}-${stack}/*",
@@ -128,6 +132,12 @@ locals {
 
   common_delete = { for stack in local.stacks : stack => [
     {
+      Sid      = "ListStackRoleInstanceProfiles"
+      Effect   = "Allow"
+      Action   = ["iam:ListInstanceProfilesForRole"]
+      Resource = [local.role_arns[stack]]
+    },
+    {
       Sid      = "RemoveStackRoles"
       Effect   = "Allow"
       Action   = ["iam:DeleteRole", "iam:DeleteRolePolicy"]
@@ -149,9 +159,18 @@ locals {
   ] }
   common_apply = { for stack in local.stacks : stack => [
     {
-      Sid      = "ManageStackRoles"
+      Sid      = "ManageBoundedStackRoles"
       Effect   = "Allow"
-      Action   = ["iam:CreateRole", "iam:UpdateRole", "iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:TagRole", "iam:UntagRole"]
+      Action   = ["iam:CreateRole", "iam:PutRolePermissionsBoundary", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"]
+      Resource = [local.role_arns[stack]]
+      Condition = { StringEquals = {
+        "iam:PermissionsBoundary" = local.runtime_boundary_arns[stack]
+      } }
+    },
+    {
+      Sid      = "UpdateStackRoleMetadata"
+      Effect   = "Allow"
+      Action   = ["iam:UpdateRole", "iam:TagRole", "iam:UntagRole"]
       Resource = [local.role_arns[stack]]
     },
     {
@@ -257,11 +276,14 @@ locals {
       Resource = ["arn:aws:logs:${local.regional_arn}:log-group:/aws/eks/${var.project_name}-${stack}/cluster", "arn:aws:logs:${local.regional_arn}:log-group:/aws/eks/${var.project_name}-${stack}/cluster:*"]
     },
     {
-      Sid       = "AttachEKSManagedPolicies"
-      Effect    = "Allow"
-      Action    = ["iam:AttachRolePolicy"]
-      Resource  = ["arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-eks-*"]
-      Condition = { ArnEquals = { "iam:PolicyARN" = local.eks_managed_policies } }
+      Sid      = "AttachEKSManagedPolicies"
+      Effect   = "Allow"
+      Action   = ["iam:AttachRolePolicy"]
+      Resource = [local.role_arns[stack]]
+      Condition = {
+        ArnEquals    = { "iam:PolicyARN" = local.eks_managed_policies }
+        StringEquals = { "iam:PermissionsBoundary" = local.runtime_boundary_arns[stack] }
+      }
     },
     {
       Sid       = "PassEKSServiceRoles"
@@ -278,6 +300,59 @@ locals {
       Condition = { StringEquals = { "iam:AWSServiceName" = ["eks.amazonaws.com", "eks-nodegroup.amazonaws.com"] } }
     },
   ] }
+}
+
+# This maximum is owned by the administrative bootstrap. Stack controllers can
+# require it on runtime roles but cannot modify, version or delete the policy.
+resource "aws_iam_policy" "runtime_boundary" {
+  for_each    = local.stacks
+  name        = "${var.project_name}-${each.key}-runtime-boundary"
+  description = "Maximum runtime permissions for ${each.key} roles."
+  tags        = merge(local.tags, { Stack = each.key })
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "RegionalRuntimeDiscovery"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeVolumesModifications",
+          "ec2:DescribeVpcs",
+        ]
+        Resource  = ["*"]
+        Condition = { StringEquals = { "aws:RequestedRegion" = var.aws_region } }
+      },
+      {
+        Sid      = "UseOwnCluster"
+        Effect   = "Allow"
+        Action   = ["eks:DescribeCluster", "eks-auth:AssumeRoleForPodIdentity"]
+        Resource = [local.cluster_arns[each.key]]
+      },
+      {
+        Sid      = "RequestRegistryAuthorization"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = ["*"]
+        Condition = { StringEquals = {
+          "aws:RequestedRegion" = var.aws_region
+        } }
+      },
+      {
+        Sid      = "PullProjectImages"
+        Effect   = "Allow"
+        Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:DescribeImages", "ecr:GetDownloadUrlForLayer"]
+        Resource = [local.ecr_arn]
+      },
+    ]
+  })
 }
 
 resource "aws_iam_role_policy" "plan" {

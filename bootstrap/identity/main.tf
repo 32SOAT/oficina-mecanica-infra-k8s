@@ -9,7 +9,11 @@ locals {
     Component = "terraform-identity"
   })
   subjects = merge(
-    { plan = "${local.repository}:pull_request" },
+    { plan = [
+      "${local.repository}:pull_request",
+      "${local.repository}:environment:homologacao",
+      "${local.repository}:environment:producao",
+    ] },
     { for stack in local.stacks : "${stack}-apply" => "${local.repository}:environment:${stack}" },
     { for stack in local.stacks : "${stack}-destroy" => "${local.repository}:environment:${stack}" }
   )
@@ -36,7 +40,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 resource "aws_iam_role" "plan" {
   name                 = "${var.project_name}-terraform-plan"
-  description          = "Pull-request Terraform plans; writes only backend lockfiles."
+  description          = "Pull-request and scheduled drift plans; writes only backend lockfiles."
   assume_role_policy   = local.trust_policies.plan
   max_session_duration = 3600
   tags                 = local.tags

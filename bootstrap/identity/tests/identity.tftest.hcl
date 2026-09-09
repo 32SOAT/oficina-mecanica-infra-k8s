@@ -109,15 +109,23 @@ run "oidc_trust_is_exact_and_operations_are_separate" {
   }
 
   assert {
+    condition = toset(local.subjects.plan) == toset([
+      "repo:32SOAT/oficina-mecanica-infra-k8s:pull_request",
+      "repo:32SOAT/oficina-mecanica-infra-k8s:environment:homologacao",
+      "repo:32SOAT/oficina-mecanica-infra-k8s:environment:producao",
+    ])
+    error_message = "Plan must trust only pull requests and exact homologacao/producao drift environments."
+  }
+
+  assert {
     condition = (
-      one(jsondecode(aws_iam_role.plan.assume_role_policy).Statement).Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:32SOAT/oficina-mecanica-infra-k8s:pull_request" &&
       alltrue([for stack in ["shared", "homologacao", "producao"] :
         one(jsondecode(aws_iam_role.apply[stack].assume_role_policy).Statement).Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:32SOAT/oficina-mecanica-infra-k8s:environment:${stack}" &&
         one(jsondecode(aws_iam_role.destroy[stack].assume_role_policy).Statement).Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:32SOAT/oficina-mecanica-infra-k8s:environment:${stack}"
       ]) &&
       length(toset(concat([aws_iam_role.plan.name], [for role in aws_iam_role.apply : role.name], [for role in aws_iam_role.destroy : role.name]))) == 7
     )
-    error_message = "Plan must be PR-only; apply/destroy use the exact stack environment and separate roles."
+    error_message = "Apply/destroy must use the exact stack environment and separate roles."
   }
 }
 
@@ -248,6 +256,85 @@ run "service_permissions_separate_stacks_and_destroy" {
       ])
     ]]))
     error_message = "IAM management excludes bootstrap controller roles; SSM writes stay inside the stack contract prefix."
+  }
+
+  assert {
+    condition = (
+      alltrue(flatten([for operation in [aws_iam_role_policy.apply, aws_iam_role_policy.destroy] : [for stack, policy in operation :
+        length([for statement in jsondecode(policy.policy).Statement : statement
+          if contains(statement.Action, "iam:ListInstanceProfilesForRole") && statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-*"]
+        ]) == 1
+      ]])) &&
+      alltrue([for statement in jsondecode(aws_iam_role_policy.plan.policy).Statement : !contains(statement.Action, "iam:ListInstanceProfilesForRole")])
+    )
+    error_message = "Apply and destroy must list instance profiles only for roles in their own stack."
+  }
+}
+
+run "runtime_permissions_boundaries_prevent_role_escape" {
+  command = plan
+
+  assert {
+    condition = (
+      toset(keys(aws_iam_policy.runtime_boundary)) == toset(["shared", "homologacao", "producao"]) &&
+      alltrue([for stack, boundary in aws_iam_policy.runtime_boundary :
+        boundary.name == "oficina-mecanica-${stack}-runtime-boundary" &&
+        length(boundary.policy) <= 6144 &&
+        alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for action in statement.Action :
+          !contains(["iam", "sts", "rds", "s3", "kms"], split(":", action)[0]) &&
+          !strcontains(action, "*") &&
+          action != "AdministratorAccess"
+        ]])) &&
+        alltrue([for statement in jsondecode(boundary.policy).Statement :
+          !contains(statement.Resource, "*") || (
+            try(statement.Condition.StringEquals["aws:RequestedRegion"], "") == "us-east-1" &&
+            alltrue([for action in statement.Action : startswith(action, "ec2:Describe") || action == "ecr:GetAuthorizationToken"])
+          )
+        ]) &&
+        alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for resource in statement.Resource :
+          alltrue([for other_stack in ["shared", "homologacao", "producao"] :
+            other_stack == stack || !strcontains(resource, other_stack)
+          ])
+        ]]))
+      ])
+    )
+    error_message = "Each stack needs a bootstrap-managed runtime boundary without IAM, STS, RDS, state, KMS, admin or cross-stack permissions."
+  }
+
+  assert {
+    condition = alltrue([for stack, policy in aws_iam_role_policy.apply :
+      alltrue([for action in ["iam:CreateRole", "iam:PutRolePermissionsBoundary", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"] :
+        length([for statement in jsondecode(policy.policy).Statement : statement if contains(statement.Action, action)]) == 1 &&
+        alltrue([for statement in jsondecode(policy.policy).Statement :
+          !contains(statement.Action, action) || (
+            statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-*"] &&
+            try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-runtime-boundary"
+          )
+        ])
+      ]) &&
+      alltrue([for statement in jsondecode(policy.policy).Statement :
+        !contains(statement.Action, "iam:AttachRolePolicy") || (
+          statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-*"] &&
+          try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-runtime-boundary"
+        )
+      ])
+    ])
+    error_message = "Role creation and policy attachment must require the exact stack role prefix and permissions boundary."
+  }
+
+  assert {
+    condition = alltrue([for policy in concat(values(aws_iam_role_policy.apply), values(aws_iam_role_policy.destroy), values(aws_iam_policy.network_apply)) :
+      alltrue(flatten([for statement in jsondecode(policy.policy).Statement : [for action in statement.Action :
+        !contains([
+          "iam:DeleteRolePermissionsBoundary",
+          "iam:CreatePolicyVersion",
+          "iam:SetDefaultPolicyVersion",
+          "iam:DeletePolicyVersion",
+          "iam:DeletePolicy",
+        ], action)
+      ]]))
+    ])
+    error_message = "Controllers must not remove boundaries or modify/version/delete their managed policies."
   }
 }
 

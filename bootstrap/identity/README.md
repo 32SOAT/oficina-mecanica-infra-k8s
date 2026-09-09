@@ -8,14 +8,17 @@ The GitHub organization/repository inputs accept only `32SOAT` and
 is required to construct these policies.
 
 The seven controller roles use the `${project_name}-terraform-` name prefix.
-Plan trusts only `repo:32SOAT/oficina-mecanica-infra-k8s:pull_request`.
+Plan trusts exactly `repo:32SOAT/oficina-mecanica-infra-k8s:pull_request` plus
+the `environment:homologacao` and `environment:producao` subjects used by
+scheduled drift. It does not trust `shared` or any other environment subject.
 Each stack has distinct apply and destroy roles that both trust its exact
 `repo:32SOAT/oficina-mecanica-infra-k8s:environment:<stack>` subject, where
 `<stack>` is `shared`, `homologacao` or `producao`. All trusts use
 `StringEquals`, the GitHub OIDC provider and audience `sts.amazonaws.com`.
 Environment branch/reviewer protections and the manual destroy workflow remain
 responsible for operation approval; an OIDC environment subject does not encode
-the workflow name. Scheduled drift cannot assume the PR-only plan role.
+the workflow name. Drift therefore runs through the protected homologacao or
+producao environment while retaining the read-only plan permissions.
 
 ## Resource contracts
 
@@ -38,8 +41,12 @@ the workflow name. Scheduled drift cannot assume the PR-only plan role.
   controllers. EKS service roles use `${project_name}-${stack}-eks-*`. Managed
   policy attachment is limited to the four enumerated EKS/node policies;
   `PassRole` is limited to these service roles and EKS/EC2 service principals.
-  Inline policy/trust administration of stack-owned roles is privileged platform
-  work and requires reviewed Terraform changes in protected environments.
+  CreateRole, trust/inline-policy changes and managed-policy attachment require
+  the exact `${project_name}-${stack}-runtime-boundary` permissions boundary.
+  The boundary is owned by this bootstrap, caps future runtime roles at regional
+  discovery, the exact stack cluster and project ECR pull, and grants no IAM,
+  STS, RDS, S3/state or KMS access. Controllers cannot remove, modify, version or
+  delete it. Role and instance-profile reads remain scoped to the stack prefix.
 - Network resources and EKS creation must carry `Project = project_name` and
   `Environment = stack`. Network parents, updates and deletion enforce those
   ownership tags. Existing resources must receive those tags through the approved
