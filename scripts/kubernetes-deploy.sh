@@ -31,6 +31,7 @@ done
 cluster_name="${CLUSTER_NAME:-}"
 [[ -n "${cluster_name}" ]] || die 'CLUSTER_NAME deve estar definido.'
 namespace="${KUBERNETES_NAMESPACE:-oficina-mecanica}"
+[[ "${namespace}" == oficina-mecanica ]] || die 'KUBERNETES_NAMESPACE deve ser oficina-mecanica.'
 api_name="fase2-kubernetes-oficina-mecanica-api"
 overlay="${repo_root}/kubernetes/oficina-api/overlays/${environment}"
 base_job="${repo_root}/kubernetes/oficina-api/base/migration-job.yaml"

@@ -56,6 +56,11 @@ apply_workload_line="$(grep -n 'kubectl apply -k' "${FAKE_LOG}" | cut -d: -f1)"
 rollout_line="$(grep -n ' rollout status ' "${FAKE_LOG}" | cut -d: -f1)"
 (( apply_workload_line < rollout_line ))
 
+if KUBERNETES_NAMESPACE=outro bash "${repo_root}/scripts/kubernetes-deploy.sh" homologacao >/dev/null 2>&1; then
+  printf 'Namespace fora do contrato foi aceito.\n' >&2
+  exit 1
+fi
+
 : >"${FAKE_LOG}"
 export FAKE_MIGRATION_FAIL=1
 if bash "${repo_root}/scripts/kubernetes-deploy.sh" homologacao >/dev/null 2>&1; then
