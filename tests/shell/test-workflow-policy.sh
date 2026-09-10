@@ -28,8 +28,23 @@ if rg -n 'uses:[[:space:]]+[^[:space:]]+@v[0-9]' "${workflow_dir}"; then
   exit 1
 fi
 
-if rg -n 'run:[[:space:]]+terraform apply' "${workflow_dir}"; then
+direct_apply_pattern='terraform[[:space:]\\]+(?:-chdir(?:=[^[:space:]\\]+|[[:space:]\\]+[^[:space:]\\]+)[[:space:]\\]+)?apply'
+if ! printf '%s %s\n' terraform "\\" '  -chdir=environments/producao' "\\" '  apply saved.tfplan' '' | rg -Uq "${direct_apply_pattern}"; then
+  printf 'O scanner não detecta terraform apply multiline com -chdir.\n' >&2
+  exit 1
+fi
+if rg -U -n "${direct_apply_pattern}" "${workflow_dir}"; then
   printf 'Apply direto encontrado fora do wrapper.\n' >&2
+  exit 1
+fi
+
+if rg -n 'vars\.GITHUB_OIDC_PROVIDER_ARN' "${workflow_dir}"; then
+  printf 'Variável GitHub reservada usada para o ARN OIDC.\n' >&2
+  exit 1
+fi
+
+if rg -n '\x60' "${workflow_dir}"; then
+  printf 'Backtick executável encontrado em workflow.\n' >&2
   exit 1
 fi
 
@@ -52,6 +67,17 @@ rg -q -- '- main' "${ci_workflow}"
 rg -q 'github.event.pull_request.head.repo.full_name == github.repository' "${ci_workflow}"
 rg -q 'TRIVY_VERSION:[[:space:]]+0\.74\.0' "${ci_workflow}"
 rg -q 'TRIVY_LINUX_AMD64_SHA256:[[:space:]]+2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a' "${ci_workflow}"
+rg -q 'github.com/rhysd/actionlint/cmd/actionlint@v1\.7\.12' "${ci_workflow}"
+rg -q 'terraform_changed:' "${ci_workflow}"
+rg -q "needs\.static-check\.outputs\.terraform_changed == 'true'" "${ci_workflow}"
+rg -q 'PLAN_REQUIRED:' "${ci_workflow}"
+rg -q 'SHARED_PLAN_REQUIRED:' "${ci_workflow}"
+rg -q 'Configuração obrigatória ausente' "${ci_workflow}"
+
+if rg -n "&&[[:space:]]*'?(producao|main)'?[[:space:]]*\|\|[[:space:]]*'?(homologacao|homolog)'?" "${workflow_dir}"; then
+  printf 'Seleção ambígua com &&/|| encontrada.\n' >&2
+  exit 1
+fi
 
 rg -q "if:[[:space:]]+vars.TF_DEPLOY_ENABLED == 'true'" "${deploy_workflow}"
 rg -q 'cancel-in-progress:[[:space:]]+false' "${deploy_workflow}"
@@ -78,9 +104,14 @@ for workflow in "${ci_workflow}" "${deploy_workflow}" "${drift_workflow}" "${des
   rg -q 'TF_BACKEND_KMS_KEY_ID:' "${workflow}"
   rg -q 'AWS_ACCOUNT_ID:' "${workflow}"
   rg -q 'TF_VAR_github_oidc_provider_arn:' "${workflow}"
+  rg -q 'vars\.AWS_OIDC_PROVIDER_ARN' "${workflow}"
 done
 
-for workflow in "${ci_workflow}" "${deploy_workflow}" "${drift_workflow}" "${destroy_workflow}"; do
+for variable in cluster_endpoint_public_access_cidrs cluster_permissions_boundary_arn node_permissions_boundary_arn deployer_permissions_boundary_arn; do
+  rg -q "TF_VAR_${variable}=" "${ci_workflow}"
+done
+
+for workflow in "${deploy_workflow}" "${drift_workflow}" "${destroy_workflow}"; do
   rg -q 'TF_VAR_cluster_endpoint_public_access_cidrs:' "${workflow}"
   rg -q 'TF_VAR_cluster_permissions_boundary_arn:' "${workflow}"
   rg -q 'TF_VAR_node_permissions_boundary_arn:' "${workflow}"
@@ -90,5 +121,13 @@ done
 rg -q 'TF_VAR_publisher_permissions_boundary_arn:' "${ci_workflow}"
 rg -q 'TF_VAR_publisher_permissions_boundary_arn:' "${deploy_workflow}"
 rg -q 'TF_VAR_publisher_permissions_boundary_arn:' "${destroy_workflow}"
+
+oidc_jobs="$(rg -c 'configure-aws-credentials@' "${workflow_dir}" | awk -F: '{ total += $2 } END { print total + 0 }')"
+identity_checks="$(rg -c 'arn:aws:sts::\$\{AWS_ACCOUNT_ID\}:assumed-role/\$\{role_name\}/gha-\$\{GITHUB_RUN_ID\}' "${workflow_dir}" | awk -F: '{ total += $2 } END { print total + 0 }')"
+[[ "${oidc_jobs}" -eq 7 ]]
+[[ "${identity_checks}" -eq "${oidc_jobs}" ]] || {
+  printf 'Cada job OIDC deve validar a conta e a role STS exatas.\n' >&2
+  exit 1
+}
 
 printf 'Workflow policy tests passed.\n'

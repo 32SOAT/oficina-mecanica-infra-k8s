@@ -24,7 +24,7 @@ publisher. Esses valores ficam em GitHub Variables, não em `tfvars` sensíveis.
 
 Configure como variáveis de repositório os valores usados antes da seleção de
 um Environment: `TF_DEPLOY_ENABLED`, `AWS_ACCOUNT_ID`, `TF_BACKEND_BUCKET`,
-`TF_BACKEND_REGION`, `TF_BACKEND_KMS_KEY_ID`, `GITHUB_OIDC_PROVIDER_ARN`,
+`TF_BACKEND_REGION`, `TF_BACKEND_KMS_KEY_ID`, `AWS_OIDC_PROVIDER_ARN`,
 `TF_PLAN_ROLE_ARN`, `SHARED_PUBLISHER_PERMISSIONS_BOUNDARY_ARN` e, com os
 prefixos `HOMOLOGACAO_` e `PRODUCAO_`, `EKS_PUBLIC_ACCESS_CIDRS_JSON`,
 `CLUSTER_PERMISSIONS_BOUNDARY_ARN`, `NODE_PERMISSIONS_BOUNDARY_ARN` e

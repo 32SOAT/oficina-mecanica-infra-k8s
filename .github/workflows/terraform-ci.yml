@@ -19,20 +19,27 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       shared_changed: ${{ steps.changes.outputs.shared_changed }}
+      terraform_changed: ${{ steps.changes.outputs.terraform_changed }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
 
-      - name: Detect shared stack changes
+      - name: Detect Terraform changes
         id: changes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -Eeuo pipefail
-          if git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | grep -Eq '^(environments/shared/|modules/(ecr|api-publisher-identity|platform-contract)/|bootstrap/|scripts/|\.github/workflows/terraform-|\.terraform-version$)'; then
+          changed_files="$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}")"
+          if grep -Eq '^(environments/|modules/|bootstrap/|scripts/|tests/shell/test-workflow-policy\.sh$|\.github/workflows/terraform-|\.terraform-version$)' <<< "${changed_files}"; then
+            echo 'terraform_changed=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'terraform_changed=false' >> "${GITHUB_OUTPUT}"
+          fi
+          if grep -Eq '^(environments/shared/|modules/(ecr|api-publisher-identity|platform-contract)/|bootstrap/|scripts/|tests/shell/test-workflow-policy\.sh$|\.github/workflows/terraform-|\.terraform-version$)' <<< "${changed_files}"; then
             echo 'shared_changed=true' >> "${GITHUB_OUTPUT}"
           else
             echo 'shared_changed=false' >> "${GITHUB_OUTPUT}"
@@ -59,15 +66,26 @@ jobs:
           tar -xzf "${archive}" -C "${bin_dir}" trivy
           echo "${bin_dir}" >> "${GITHUB_PATH}"
 
+      - name: Install pinned actionlint
+        run: |
+          set -Eeuo pipefail
+          bin_dir="${RUNNER_TEMP}/actionlint-bin"
+          mkdir -p "${bin_dir}"
+          GOBIN="${bin_dir}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${bin_dir}" >> "${GITHUB_PATH}"
+
       - name: Validate Terraform and shell
         run: bash scripts/terraform-check.sh
 
       - name: Scan Terraform configuration
         run: trivy config --severity HIGH,CRITICAL --exit-code 1 .
 
+      - name: Validate GitHub Actions workflows
+        run: actionlint .github/workflows/*.yml
+
   plan-environment:
     name: Plan environment
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.static-check.outputs.terraform_changed == 'true'
     needs: static-check
     runs-on: ubuntu-latest
     permissions:
@@ -78,14 +96,69 @@ jobs:
       TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
       TF_BACKEND_REGION: ${{ vars.TF_BACKEND_REGION }}
       TF_BACKEND_KMS_KEY_ID: ${{ vars.TF_BACKEND_KMS_KEY_ID }}
-      TF_VAR_github_oidc_provider_arn: ${{ vars.GITHUB_OIDC_PROVIDER_ARN }}
-      TF_VAR_cluster_endpoint_public_access_cidrs: ${{ github.base_ref == 'main' && vars.PRODUCAO_EKS_PUBLIC_ACCESS_CIDRS_JSON || vars.HOMOLOGACAO_EKS_PUBLIC_ACCESS_CIDRS_JSON }}
-      TF_VAR_cluster_permissions_boundary_arn: ${{ github.base_ref == 'main' && vars.PRODUCAO_CLUSTER_PERMISSIONS_BOUNDARY_ARN || vars.HOMOLOGACAO_CLUSTER_PERMISSIONS_BOUNDARY_ARN }}
-      TF_VAR_node_permissions_boundary_arn: ${{ github.base_ref == 'main' && vars.PRODUCAO_NODE_PERMISSIONS_BOUNDARY_ARN || vars.HOMOLOGACAO_NODE_PERMISSIONS_BOUNDARY_ARN }}
-      TF_VAR_deployer_permissions_boundary_arn: ${{ github.base_ref == 'main' && vars.PRODUCAO_DEPLOYER_PERMISSIONS_BOUNDARY_ARN || vars.HOMOLOGACAO_DEPLOYER_PERMISSIONS_BOUNDARY_ARN }}
+      TF_VAR_github_oidc_provider_arn: ${{ vars.AWS_OIDC_PROVIDER_ARN }}
+      TF_PLAN_ROLE_ARN: ${{ vars.TF_PLAN_ROLE_ARN }}
+      HOMOLOGACAO_EKS_PUBLIC_ACCESS_CIDRS_JSON: ${{ vars.HOMOLOGACAO_EKS_PUBLIC_ACCESS_CIDRS_JSON }}
+      HOMOLOGACAO_CLUSTER_PERMISSIONS_BOUNDARY_ARN: ${{ vars.HOMOLOGACAO_CLUSTER_PERMISSIONS_BOUNDARY_ARN }}
+      HOMOLOGACAO_NODE_PERMISSIONS_BOUNDARY_ARN: ${{ vars.HOMOLOGACAO_NODE_PERMISSIONS_BOUNDARY_ARN }}
+      HOMOLOGACAO_DEPLOYER_PERMISSIONS_BOUNDARY_ARN: ${{ vars.HOMOLOGACAO_DEPLOYER_PERMISSIONS_BOUNDARY_ARN }}
+      PRODUCAO_EKS_PUBLIC_ACCESS_CIDRS_JSON: ${{ vars.PRODUCAO_EKS_PUBLIC_ACCESS_CIDRS_JSON }}
+      PRODUCAO_CLUSTER_PERMISSIONS_BOUNDARY_ARN: ${{ vars.PRODUCAO_CLUSTER_PERMISSIONS_BOUNDARY_ARN }}
+      PRODUCAO_NODE_PERMISSIONS_BOUNDARY_ARN: ${{ vars.PRODUCAO_NODE_PERMISSIONS_BOUNDARY_ARN }}
+      PRODUCAO_DEPLOYER_PERMISSIONS_BOUNDARY_ARN: ${{ vars.PRODUCAO_DEPLOYER_PERMISSIONS_BOUNDARY_ARN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Select and validate environment configuration
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -Eeuo pipefail
+          require_value() {
+            local name="$1" value="$2"
+            [[ -n "${value}" && "${value}" != *$'\n'* ]] || {
+              printf 'Configuração obrigatória ausente ou inválida: %s\n' "${name}" >&2
+              exit 1
+            }
+          }
+
+          for name in AWS_ACCOUNT_ID TF_BACKEND_BUCKET TF_BACKEND_REGION TF_BACKEND_KMS_KEY_ID TF_VAR_github_oidc_provider_arn TF_PLAN_ROLE_ARN; do
+            require_value "${name}" "${!name:-}"
+          done
+
+          case "${BASE_REF}" in
+            homolog)
+              stack='homologacao'
+              endpoint_cidrs="${HOMOLOGACAO_EKS_PUBLIC_ACCESS_CIDRS_JSON}"
+              cluster_boundary="${HOMOLOGACAO_CLUSTER_PERMISSIONS_BOUNDARY_ARN}"
+              node_boundary="${HOMOLOGACAO_NODE_PERMISSIONS_BOUNDARY_ARN}"
+              deployer_boundary="${HOMOLOGACAO_DEPLOYER_PERMISSIONS_BOUNDARY_ARN}"
+              ;;
+            main)
+              stack='producao'
+              endpoint_cidrs="${PRODUCAO_EKS_PUBLIC_ACCESS_CIDRS_JSON}"
+              cluster_boundary="${PRODUCAO_CLUSTER_PERMISSIONS_BOUNDARY_ARN}"
+              node_boundary="${PRODUCAO_NODE_PERMISSIONS_BOUNDARY_ARN}"
+              deployer_boundary="${PRODUCAO_DEPLOYER_PERMISSIONS_BOUNDARY_ARN}"
+              ;;
+            *)
+              printf 'Base branch não suportada: %s\n' "${BASE_REF}" >&2
+              exit 1
+              ;;
+          esac
+
+          require_value EKS_PUBLIC_ACCESS_CIDRS_JSON "${endpoint_cidrs}"
+          require_value CLUSTER_PERMISSIONS_BOUNDARY_ARN "${cluster_boundary}"
+          require_value NODE_PERMISSIONS_BOUNDARY_ARN "${node_boundary}"
+          require_value DEPLOYER_PERMISSIONS_BOUNDARY_ARN "${deployer_boundary}"
+          {
+            printf 'STACK=%s\n' "${stack}"
+            printf 'TF_VAR_cluster_endpoint_public_access_cidrs=%s\n' "${endpoint_cidrs}"
+            printf 'TF_VAR_cluster_permissions_boundary_arn=%s\n' "${cluster_boundary}"
+            printf 'TF_VAR_node_permissions_boundary_arn=%s\n' "${node_boundary}"
+            printf 'TF_VAR_deployer_permissions_boundary_arn=%s\n' "${deployer_boundary}"
+          } >> "${GITHUB_ENV}"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
@@ -98,10 +171,22 @@ jobs:
           aws-region: ${{ vars.TF_BACKEND_REGION }}
           role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
           role-session-name: gha-${{ github.run_id }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Validate assumed plan session
+        env:
+          EXPECTED_ROLE_ARN: ${{ vars.TF_PLAN_ROLE_ARN }}
+        run: |
+          set -Eeuo pipefail
+          role_name="${EXPECTED_ROLE_ARN##*/}"
+          expected_arn="arn:aws:sts::${AWS_ACCOUNT_ID}:assumed-role/${role_name}/gha-${GITHUB_RUN_ID}"
+          actual_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          [[ "${actual_arn}" == "${expected_arn}" ]] || {
+            printf 'Sessão AWS inesperada: %s\n' "${actual_arn}" >&2
+            exit 1
+          }
 
       - name: Create and inspect saved plan
-        env:
-          STACK: ${{ github.base_ref == 'main' && 'producao' || 'homologacao' }}
         run: |
           set -Eeuo pipefail
           plan_file="${RUNNER_TEMP}/${STACK}.tfplan"
@@ -121,11 +206,23 @@ jobs:
       TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
       TF_BACKEND_REGION: ${{ vars.TF_BACKEND_REGION }}
       TF_BACKEND_KMS_KEY_ID: ${{ vars.TF_BACKEND_KMS_KEY_ID }}
-      TF_VAR_github_oidc_provider_arn: ${{ vars.GITHUB_OIDC_PROVIDER_ARN }}
+      TF_VAR_github_oidc_provider_arn: ${{ vars.AWS_OIDC_PROVIDER_ARN }}
       TF_VAR_publisher_permissions_boundary_arn: ${{ vars.SHARED_PUBLISHER_PERMISSIONS_BOUNDARY_ARN }}
+      TF_PLAN_ROLE_ARN: ${{ vars.TF_PLAN_ROLE_ARN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Validate shared configuration
+        run: |
+          set -Eeuo pipefail
+          for name in AWS_ACCOUNT_ID TF_BACKEND_BUCKET TF_BACKEND_REGION TF_BACKEND_KMS_KEY_ID TF_VAR_github_oidc_provider_arn TF_VAR_publisher_permissions_boundary_arn TF_PLAN_ROLE_ARN; do
+            value="${!name:-}"
+            [[ -n "${value}" && "${value}" != *$'\n'* ]] || {
+              printf 'Configuração obrigatória ausente ou inválida: %s\n' "${name}" >&2
+              exit 1
+            }
+          done
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
@@ -138,6 +235,20 @@ jobs:
           aws-region: ${{ vars.TF_BACKEND_REGION }}
           role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
           role-session-name: gha-${{ github.run_id }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Validate assumed plan session
+        env:
+          EXPECTED_ROLE_ARN: ${{ vars.TF_PLAN_ROLE_ARN }}
+        run: |
+          set -Eeuo pipefail
+          role_name="${EXPECTED_ROLE_ARN##*/}"
+          expected_arn="arn:aws:sts::${AWS_ACCOUNT_ID}:assumed-role/${role_name}/gha-${GITHUB_RUN_ID}"
+          actual_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          [[ "${actual_arn}" == "${expected_arn}" ]] || {
+            printf 'Sessão AWS inesperada: %s\n' "${actual_arn}" >&2
+            exit 1
+          }
 
       - name: Create and inspect saved plan
         run: |
@@ -160,8 +271,18 @@ jobs:
           STATIC_RESULT: ${{ needs.static-check.result }}
           ENVIRONMENT_PLAN_RESULT: ${{ needs.plan-environment.result }}
           SHARED_PLAN_RESULT: ${{ needs.plan-shared.result }}
+          PLAN_REQUIRED: ${{ needs.static-check.outputs.terraform_changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
+          SHARED_PLAN_REQUIRED: ${{ needs.static-check.outputs.shared_changed == 'true' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           set -Eeuo pipefail
           test "${STATIC_RESULT}" = success
-          case "${ENVIRONMENT_PLAN_RESULT}" in success|skipped) ;; *) exit 1 ;; esac
-          case "${SHARED_PLAN_RESULT}" in success|skipped) ;; *) exit 1 ;; esac
+          if [[ "${PLAN_REQUIRED}" == true ]]; then
+            test "${ENVIRONMENT_PLAN_RESULT}" = success
+          else
+            test "${ENVIRONMENT_PLAN_RESULT}" = skipped
+          fi
+          if [[ "${SHARED_PLAN_REQUIRED}" == true ]]; then
+            test "${SHARED_PLAN_RESULT}" = success
+          else
+            test "${SHARED_PLAN_RESULT}" = skipped
+          fi

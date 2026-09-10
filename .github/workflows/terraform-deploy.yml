@@ -69,7 +69,7 @@ jobs:
       TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
       TF_BACKEND_REGION: ${{ vars.TF_BACKEND_REGION }}
       TF_BACKEND_KMS_KEY_ID: ${{ vars.TF_BACKEND_KMS_KEY_ID }}
-      TF_VAR_github_oidc_provider_arn: ${{ vars.GITHUB_OIDC_PROVIDER_ARN }}
+      TF_VAR_github_oidc_provider_arn: ${{ vars.AWS_OIDC_PROVIDER_ARN }}
       TF_VAR_cluster_endpoint_public_access_cidrs: ${{ vars.EKS_PUBLIC_ACCESS_CIDRS_JSON }}
       TF_VAR_cluster_permissions_boundary_arn: ${{ vars.CLUSTER_PERMISSIONS_BOUNDARY_ARN }}
       TF_VAR_node_permissions_boundary_arn: ${{ vars.NODE_PERMISSIONS_BOUNDARY_ARN }}
@@ -89,6 +89,17 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ vars.TF_APPLY_ROLE_ARN }}
           role-session-name: gha-${{ github.run_id }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Validate assumed apply session
+        env:
+          EXPECTED_ROLE_ARN: ${{ vars.TF_APPLY_ROLE_ARN }}
+        run: |
+          set -Eeuo pipefail
+          role_name="${EXPECTED_ROLE_ARN##*/}"
+          expected_arn="arn:aws:sts::${AWS_ACCOUNT_ID}:assumed-role/${role_name}/gha-${GITHUB_RUN_ID}"
+          actual_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          test "${actual_arn}" = "${expected_arn}"
 
       - name: Plan, enforce policy and apply
         run: |
@@ -129,7 +140,7 @@ jobs:
       TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
       TF_BACKEND_REGION: ${{ vars.TF_BACKEND_REGION }}
       TF_BACKEND_KMS_KEY_ID: ${{ vars.TF_BACKEND_KMS_KEY_ID }}
-      TF_VAR_github_oidc_provider_arn: ${{ vars.GITHUB_OIDC_PROVIDER_ARN }}
+      TF_VAR_github_oidc_provider_arn: ${{ vars.AWS_OIDC_PROVIDER_ARN }}
       TF_VAR_publisher_permissions_boundary_arn: ${{ vars.PUBLISHER_PERMISSIONS_BOUNDARY_ARN }}
     steps:
       - name: Checkout merged commit
@@ -146,6 +157,17 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ vars.TF_APPLY_ROLE_ARN }}
           role-session-name: gha-${{ github.run_id }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Validate assumed apply session
+        env:
+          EXPECTED_ROLE_ARN: ${{ vars.TF_APPLY_ROLE_ARN }}
+        run: |
+          set -Eeuo pipefail
+          role_name="${EXPECTED_ROLE_ARN##*/}"
+          expected_arn="arn:aws:sts::${AWS_ACCOUNT_ID}:assumed-role/${role_name}/gha-${GITHUB_RUN_ID}"
+          actual_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          test "${actual_arn}" = "${expected_arn}"
 
       - name: Plan, enforce policy and apply
         run: |
@@ -180,7 +202,7 @@ jobs:
       TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
       TF_BACKEND_REGION: ${{ vars.TF_BACKEND_REGION }}
       TF_BACKEND_KMS_KEY_ID: ${{ vars.TF_BACKEND_KMS_KEY_ID }}
-      TF_VAR_github_oidc_provider_arn: ${{ vars.GITHUB_OIDC_PROVIDER_ARN }}
+      TF_VAR_github_oidc_provider_arn: ${{ vars.AWS_OIDC_PROVIDER_ARN }}
       TF_VAR_cluster_endpoint_public_access_cidrs: ${{ vars.EKS_PUBLIC_ACCESS_CIDRS_JSON }}
       TF_VAR_cluster_permissions_boundary_arn: ${{ vars.CLUSTER_PERMISSIONS_BOUNDARY_ARN }}
       TF_VAR_node_permissions_boundary_arn: ${{ vars.NODE_PERMISSIONS_BOUNDARY_ARN }}
@@ -200,6 +222,17 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ vars.TF_APPLY_ROLE_ARN }}
           role-session-name: gha-${{ github.run_id }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Validate assumed apply session
+        env:
+          EXPECTED_ROLE_ARN: ${{ vars.TF_APPLY_ROLE_ARN }}
+        run: |
+          set -Eeuo pipefail
+          role_name="${EXPECTED_ROLE_ARN##*/}"
+          expected_arn="arn:aws:sts::${AWS_ACCOUNT_ID}:assumed-role/${role_name}/gha-${GITHUB_RUN_ID}"
+          actual_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          test "${actual_arn}" = "${expected_arn}"
 
       - name: Plan, enforce policy and apply
         run: |
