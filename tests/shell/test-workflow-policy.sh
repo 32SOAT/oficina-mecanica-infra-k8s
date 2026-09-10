@@ -29,6 +29,11 @@ grep -Fxq 'terraform_changed=true' <<< "${terraform_classification}"
 grep -Fxq 'shared_changed=true' <<< "${terraform_classification}"
 grep -Fxq 'environment_changed=true' <<< "${terraform_classification}"
 
+classifier_classification="$(printf '%s\n' 'scripts/classify-terraform-changes.sh' | bash "${change_classifier}")"
+grep -Fxq 'terraform_changed=true' <<< "${classifier_classification}"
+grep -Fxq 'shared_changed=true' <<< "${classifier_classification}"
+grep -Fxq 'environment_changed=true' <<< "${classifier_classification}"
+
 if rg -n 'scripts/\*\*' "${workflow_dir}/terraform-ci.yml" "${workflow_dir}/terraform-deploy.yml"; then
   printf 'Path genérico de scripts mistura mudanças Kubernetes e Terraform.\n' >&2
   exit 1
