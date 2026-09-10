@@ -793,6 +793,14 @@ resource "aws_iam_policy" "eks_node_boundary" {
         Resource = [local.ecr_arn]
       },
       {
+        # The boundary also caps the attached AWS-managed ECR read policy.
+        # Official add-ons live in AWS accounts, separate from the app ECR.
+        Sid      = "PullOfficialEKSAddons"
+        Effect   = "Allow"
+        Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+        Resource = local.eks_addon_repository_arns
+      },
+      {
         Sid    = "DenyCrossStackENIMutations"
         Effect = "Deny"
         Action = [

@@ -13,8 +13,8 @@ variable "aws_region" {
   type        = string
   nullable    = false
   validation {
-    condition     = can(regex("^(af|ap|ca|eu|il|me|mx|sa|us)-(central|east|north|northeast|northwest|south|southeast|southwest|west)-[1-9][0-9]*$", var.aws_region))
-    error_message = "aws_region must be a commercial AWS region such as us-east-1."
+    condition     = contains(keys(local.eks_addon_registry_accounts), var.aws_region)
+    error_message = "aws_region must have an official commercial EKS registry in addon-registries.tf; review the AWS registry mapping before adding a new region."
   }
 }
 

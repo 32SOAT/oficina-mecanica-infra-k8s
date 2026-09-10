@@ -11,8 +11,8 @@ locals {
   subjects = merge(
     { plan = [
       "${local.repository}:pull_request",
-      "${local.repository}:environment:homologacao",
-      "${local.repository}:environment:producao",
+      "${local.repository}:environment:drift-homologacao",
+      "${local.repository}:environment:drift-producao",
     ] },
     { for stack in local.stacks : "${stack}-apply" => "${local.repository}:environment:${stack}" },
     { for stack in local.stacks : "${stack}-destroy" => "${local.repository}:environment:${stack}" }

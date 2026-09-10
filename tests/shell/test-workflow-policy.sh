@@ -109,6 +109,24 @@ rg -q 'scripts/terraform-apply.sh' "${deploy_workflow}"
 rg -q 'schedule:' "${drift_workflow}"
 rg -q 'workflow_dispatch:' "${drift_workflow}"
 rg -q 'scripts/terraform-drift.sh' "${drift_workflow}"
+# Parse the matrix and job contract: scheduled runs retain refs/heads/main even
+# when checkout selects homolog. The drift environment must be distinct from
+# the apply environment and its credentials must be the read-only plan role.
+ruby - "${drift_workflow}" <<'RUBY'
+require "yaml"
+workflow = YAML.safe_load_file(ARGV.fetch(0), aliases: true)
+job = workflow.fetch("jobs").fetch("drift")
+abort "Drift must execute only from main" unless job.fetch("if", "") == "github.ref == 'refs/heads/main'"
+abort "Drift must use its separate Environment" unless job.fetch("environment") == '${{ matrix.environment }}'
+expected = [
+  {"stack" => "homologacao", "ref" => "homolog", "environment" => "drift-homologacao"},
+  {"stack" => "producao", "ref" => "main", "environment" => "drift-producao"}
+]
+abort "Drift branch/environment matrix changed" unless job.fetch("strategy").fetch("matrix").fetch("include") == expected
+credentials = job.fetch("steps").find { |step| step.fetch("uses", "").start_with?("aws-actions/configure-aws-credentials@") }
+abort "Drift requires read-only credentials" unless credentials.fetch("with").fetch("role-to-assume") == '${{ vars.TF_PLAN_ROLE_ARN }}'
+abort "Drift must serialize with deploy" unless job.fetch("concurrency").fetch("group") == 'terraform-${{ matrix.stack }}'
+RUBY
 if rg -q 'terraform-apply.sh|terraform apply' "${drift_workflow}"; then
   printf 'O workflow de drift não pode aplicar mudanças.\n' >&2
   exit 1

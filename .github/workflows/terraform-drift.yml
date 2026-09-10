@@ -15,8 +15,11 @@ env:
 jobs:
   drift:
     name: Drift ${{ matrix.stack }}
+    # A schedule retains the default branch ref even after checkout of homolog.
+    # Manual runs use main too, matching the drift-only Environment protections.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: ${{ matrix.stack }}
+    environment: ${{ matrix.environment }}
     permissions:
       contents: read
       id-token: write
@@ -26,8 +29,10 @@ jobs:
         include:
           - stack: homologacao
             ref: homolog
+            environment: drift-homologacao
           - stack: producao
             ref: main
+            environment: drift-producao
     concurrency:
       group: terraform-${{ matrix.stack }}
       cancel-in-progress: false

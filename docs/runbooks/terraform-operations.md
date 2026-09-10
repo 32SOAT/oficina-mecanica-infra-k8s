@@ -80,7 +80,38 @@ inspecione o state atualizado, gere um novo plan e submeta a correção.
 ## Drift
 
 `Terraform Drift` roda semanalmente e também por `workflow_dispatch` para
-homologação e produção, com a role de plan. O resultado é:
+homologação e produção, com a role de plan. O agendamento usa a default branch
+`main`. No disparo manual, selecione `main`; outras refs são recusadas pelo job.
+O checkout de `homolog` para homologação não altera a ref usada nas proteções
+de Environment. Por isso, crie dois Environments exclusivos de leitura:
+
+| GitHub Environment | Branch permitida para o run | Checkout | Subject OIDC da role de plan |
+| --- | --- | --- | --- |
+| `drift-homologacao` | Somente `main` | `homolog` | `repo:32SOAT/oficina-mecanica-infra-k8s:environment:drift-homologacao` |
+| `drift-producao` | Somente `main` | `main` | `repo:32SOAT/oficina-mecanica-infra-k8s:environment:drift-producao` |
+
+Use a regra de deployment branches selecionadas, com a branch exata `main` e
+sem tags. Mantenha `main` protegida no repositório. Os dois Environments de drift
+não têm required reviewers nem wait timer, para permitir execução automática.
+Configure em ambos `AWS_ACCOUNT_ID`, `AWS_REGION`, `TF_BACKEND_BUCKET`,
+`TF_BACKEND_REGION`, `TF_BACKEND_KMS_KEY_ID`, `AWS_OIDC_PROVIDER_ARN` e
+`TF_PLAN_ROLE_ARN`. Copie do stack correspondente, sem prefixo,
+`EKS_PUBLIC_ACCESS_CIDRS_JSON`, `CLUSTER_PERMISSIONS_BOUNDARY_ARN`,
+`NODE_PERMISSIONS_BOUNDARY_ARN` e `DEPLOYER_PERMISSIONS_BOUNDARY_ARN`.
+Não configure roles de apply/destroy nesses Environments. A trust de plan aceita
+somente os dois subjects acima e `pull_request`; as roles de apply/destroy
+continuam aceitando apenas seus próprios Environments.
+
+Preserve as proteções de `homologacao` (somente `homolog`), `shared` e `producao`
+(somente `main`), incluindo aprovações existentes. Crie/configure os Environments
+de drift e publique a alteração administrativa de trust do bootstrap antes de
+habilitar a agenda. Isso é configuração operacional separada da mudança de
+código. O grupo de concorrência permanece `terraform-<stack>` junto do deploy.
+
+Referências: [GitHub schedule](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
+e [proteções de Environment](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+
+O resultado é:
 
 - exit `0`: infraestrutura e configuração convergem;
 - exit `2`: drift detectado, registrado como warning e no job summary;

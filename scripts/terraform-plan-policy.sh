@@ -10,6 +10,7 @@ source "${script_dir}/lib/terraform-common.sh"
 stack="$(validate_stack "$1")"
 plan_file="$2"
 [[ -f "${plan_file}" ]] || die "Arquivo de plan ausente: ${plan_file}"
+plan_file="$(cd -- "$(dirname -- "${plan_file}")" && pwd)/$(basename -- "${plan_file}")"
 require_command jq
 
 plan_json() {
@@ -17,7 +18,7 @@ plan_json() {
     cat -- "${plan_file}"
   else
     require_command terraform
-    terraform show -json "${plan_file}"
+    terraform -chdir="$(stack_directory "${stack}")" show -json "${plan_file}"
   fi
 }
 

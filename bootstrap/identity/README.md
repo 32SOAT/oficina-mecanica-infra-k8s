@@ -9,16 +9,23 @@ is required to construct these policies.
 
 The seven controller roles use the `${project_name}-terraform-` name prefix.
 Plan trusts exactly `repo:32SOAT/oficina-mecanica-infra-k8s:pull_request` plus
-the `environment:homologacao` and `environment:producao` subjects used by
-scheduled drift. It does not trust `shared` or any other environment subject.
+the `environment:drift-homologacao` and `environment:drift-producao` subjects used
+by scheduled/manual drift. It does not trust apply environments or any other
+environment subject.
 Each stack has distinct apply and destroy roles that both trust its exact
 `repo:32SOAT/oficina-mecanica-infra-k8s:environment:<stack>` subject, where
 `<stack>` is `shared`, `homologacao` or `producao`. All trusts use
 `StringEquals`, the GitHub OIDC provider and audience `sts.amazonaws.com`.
 Environment branch/reviewer protections and the manual destroy workflow remain
 responsible for operation approval; an OIDC environment subject does not encode
-the workflow name. Drift therefore runs through the protected homologacao or
-producao environment while retaining the read-only plan permissions.
+the workflow name. The separate `drift-homologacao` and `drift-producao`
+Environments allow only the protected `main` branch, with no required reviewer
+or wait timer, so schedules can run unattended. A checkout of `homolog` does not
+change the run's default-branch deployment ref. Manual drift must also select
+`main`. Keep `homologacao` restricted to `homolog` and `shared`/`producao` to
+`main`, retaining their existing apply/destroy approvals. Configure only the
+plan role in drift Environments, with the stack variables listed in the
+[operations runbook](../../docs/runbooks/terraform-operations.md#drift).
 
 ## Resource contracts
 
@@ -65,7 +72,19 @@ producao environment while retaining the read-only plan permissions.
   Terraform state key. The node maximum combines the complete
   `AmazonEKSWorkerNodePolicy` v3 and `AmazonEKS_CNI_Policy` v6 contracts with the
   `AmazonEC2ContainerRegistryReadOnly` v3 actions scoped to the project ECR where
-  resource-level authorization is available. The inherent `Resource = "*"`
+  resource-level authorization is available. A separate statement permits only
+  `BatchCheckLayerAvailability`, `BatchGetImage` and `GetDownloadUrlForLayer`
+  on exact official add-on repositories in the configured region. The explicit
+  [registry map](addon-registries.tf) covers all 34 commercial EKS regions in
+  the [AWS registry table](https://docs.aws.amazon.com/eks/latest/userguide/add-ons-images.html),
+  including distinct opt-in-region accounts. Unmapped regions fail validation
+  until their registry is reviewed; there is no fallback account or wildcard.
+  The allowlist includes VPC CNI and its init/network-policy containers, CoreDNS,
+  kube-proxy, Pod Identity Agent, and EBS CSI with its CSI sidecars. This only
+  allows image pulls: the EKS module still installs its four existing add-ons,
+  and EBS CSI installation/workload IAM remains a separate task. No add-on
+  registry receives upload, deletion or repository administration permission.
+  The inherent `Resource = "*"`
   scope of EKS/EC2 discovery and CNI mutations is preserved so the boundaries do
   not nullify their attached AWS policies. Explicit denies isolate supported
   EC2, ELB, Auto Scaling and ENI mutations whenever a target is identified by

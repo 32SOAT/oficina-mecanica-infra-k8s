@@ -75,5 +75,10 @@ Kubernetes referenciam o digest versionado nos manifests, sem `latest`.
 - [Recuperação do state](docs/runbooks/state-recovery.md): contenção, seleção e
   restauração de versão S3, force-unlock e validação sem expor o state.
 
-Use `bash scripts/terraform-check.sh` para validar formatação, roots, testes e
-ShellCheck antes de abrir um Pull Request.
+Use `bash scripts/terraform-check.sh` para validar formatação, os onze roots com
+testes (dois bootstraps, seis módulos e três ambientes), regressões shell e
+ShellCheck antes de abrir um Pull Request. Cada root usa `init -backend=false`,
+`validate` e `test`, com Terraform 1.16.1 e AWS provider 5.100.0. Os testes usam
+providers mock e não exigem credenciais AWS nem acesso ao backend. Para execução
+offline, use `TF_CLI_CONFIG_FILE` com um filesystem mirror local do provider
+fixado e preserve os lockfiles versionados.

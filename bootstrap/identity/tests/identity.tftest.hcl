@@ -109,12 +109,12 @@ run "oidc_trust_is_exact_and_operations_are_separate" {
   }
 
   assert {
-    condition = toset(local.subjects.plan) == toset([
+    condition = toset(one(jsondecode(aws_iam_role.plan.assume_role_policy).Statement).Condition.StringEquals["token.actions.githubusercontent.com:sub"]) == toset([
       "repo:32SOAT/oficina-mecanica-infra-k8s:pull_request",
-      "repo:32SOAT/oficina-mecanica-infra-k8s:environment:homologacao",
-      "repo:32SOAT/oficina-mecanica-infra-k8s:environment:producao",
+      "repo:32SOAT/oficina-mecanica-infra-k8s:environment:drift-homologacao",
+      "repo:32SOAT/oficina-mecanica-infra-k8s:environment:drift-producao",
     ])
-    error_message = "Plan must trust only pull requests and exact homologacao/producao drift environments."
+    error_message = "Plan must trust only pull requests and distinct read-only drift environments; apply environments retain their own subjects."
   }
 
   assert {

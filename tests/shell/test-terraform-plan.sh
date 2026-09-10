@@ -26,6 +26,14 @@ printf '%s\n' "$@" >>"${FAKE_TERRAFORM_ARGUMENTS:?}"
 
 for argument in "$@"; do
   if [[ "${argument}" == 'show' ]]; then
+    [[ "$1" == "-chdir=${FAKE_EXPECTED_SHOW_DIRECTORY:?}" ]] || {
+      printf 'FAIL: show deve carregar providers do stack\n' >&2
+      exit 42
+    }
+    [[ "$4" == "${FAKE_EXPECTED_SHOW_PLAN:?}" ]] || {
+      printf 'FAIL: show deve receber o caminho absoluto normalizado do plan\n' >&2
+      exit 43
+    }
     cat "${FAKE_TERRAFORM_SHOW_JSON:?}"
     exit 0
   fi
@@ -121,8 +129,14 @@ if bash "${repo_root}/scripts/terraform-plan-policy.sh" producao "${endpoint_fix
 fi
 
 binary_plan="${test_bin}/saved.tfplan"
-: >"${binary_plan}"
+printf 'binary-plan\n' >"${binary_plan}"
+FAKE_EXPECTED_SHOW_DIRECTORY="${repo_root}/environments/homologacao"
+FAKE_EXPECTED_SHOW_PLAN="${binary_plan}"
+export FAKE_EXPECTED_SHOW_DIRECTORY FAKE_EXPECTED_SHOW_PLAN
 bash "${repo_root}/scripts/terraform-plan-policy.sh" homologacao "${binary_plan}"
+bash "${repo_root}/scripts/terraform-plan-policy.sh" homologacao './saved.tfplan'
+FAKE_EXPECTED_SHOW_DIRECTORY="${repo_root}/environments/producao"
+bash "${repo_root}/scripts/terraform-plan-policy.sh" producao './saved.tfplan'
 grep -Fxq -- 'show' "${terraform_arguments}"
 grep -Fxq -- '-json' "${terraform_arguments}"
 grep -Fxq -- "${binary_plan}" "${terraform_arguments}"
