@@ -15,3 +15,65 @@ versionáveis são `environments/shared/shared.auto.tfvars`,
 `environments/homologacao/environment.auto.tfvars` e
 `environments/producao/environment.auto.tfvars`; eles podem conter apenas
 valores não sensíveis.
+
+## Arquitetura Terraform
+
+Os três roots operacionais têm backend, lockfile e ciclo de vida independentes:
+
+| Root | Branch de deploy | Responsabilidade |
+| --- | --- | --- |
+| [`environments/shared`](environments/shared) | `main` | ECR da API, role de publicação e contrato compartilhado |
+| [`environments/homologacao`](environments/homologacao) | `homolog` | Rede, EKS, role de deploy e contratos da homologação |
+| [`environments/producao`](environments/producao) | `main` | Rede, EKS, role de deploy e contratos da produção |
+
+`bootstrap/backend` cria o bucket/KMS do state e `bootstrap/identity` cria o
+provider OIDC e roles separadas de plan, apply e destroy. Eles são executados
+administrativamente antes dos roots operacionais. Não são usados Terraform
+workspaces.
+
+O banco gerenciado continua em seu repositório Terraform próprio. Este
+repositório publica somente a rede de integração: subnets reservadas e o
+security group que identifica clientes do banco. O repositório do banco consome
+esses contratos e é o único owner de RDS, subnet group, backups e credenciais.
+
+## Contratos SSM
+
+Os módulos publicam somente parâmetros `String` não sensíveis:
+
+- `/oficina/shared/ecr/repository-url`;
+- `/oficina/<ambiente>/platform/aws-region`;
+- `/oficina/<ambiente>/platform/vpc-id`;
+- `/oficina/<ambiente>/platform/public-subnet-ids`;
+- `/oficina/<ambiente>/platform/private-subnet-ids`;
+- `/oficina/<ambiente>/platform/database-subnet-ids`;
+- `/oficina/<ambiente>/platform/database-client-security-group-id`;
+- `/oficina/<ambiente>/platform/eks-cluster-name`.
+
+`<ambiente>` é `homologacao` ou `producao`. Senhas, tokens e connection strings
+não pertencem a esse contrato nem ao state desta plataforma.
+
+## Entrega
+
+Pull Requests para `homolog` e `main` executam verificações estáticas e, em PRs
+internos, planos com OIDC read-only. O check agregado de proteção de branch é
+`terraform / gate`. Após merge, o workflow de deploy usa o GitHub Environment
+do stack, gera um saved plan, aplica a policy e entrega exatamente esse arquivo.
+
+Applies automáticos só são habilitados quando a variável de repositório
+`TF_DEPLOY_ENABLED` é exatamente `true`. Drift é agendado e nunca aplica
+correções. Destroy existe apenas no workflow manual protegido, com confirmação
+duplicada; produção permanece bloqueada por padrão.
+
+A imagem da aplicação não é construída neste repositório. O fluxo manual em
+`oficina-mecanica-api` publica uma imagem imutável no ECR. A promoção e o deploy
+Kubernetes referenciam o digest versionado nos manifests, sem `latest`.
+
+## Operação e recuperação
+
+- [Operações Terraform](docs/runbooks/terraform-operations.md): init, plan,
+  apply, drift, locks, outputs permitidos e destroy protegido.
+- [Recuperação do state](docs/runbooks/state-recovery.md): contenção, seleção e
+  restauração de versão S3, force-unlock e validação sem expor o state.
+
+Use `bash scripts/terraform-check.sh` para validar formatação, roots, testes e
+ShellCheck antes de abrir um Pull Request.

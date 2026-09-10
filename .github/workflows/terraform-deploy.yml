@@ -1,0 +1,224 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches:
+      - homolog
+      - main
+    paths:
+      - "environments/**"
+      - "modules/**"
+      - "bootstrap/**"
+      - "scripts/**"
+      - ".github/workflows/terraform-*.yml"
+      - ".terraform-version"
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  changes:
+    name: Detect affected stacks
+    runs-on: ubuntu-latest
+    outputs:
+      shared: ${{ steps.detect.outputs.shared }}
+      environment: ${{ steps.detect.outputs.environment }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Classify changes
+        id: detect
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          changed_files="$(git diff --name-only "${BEFORE_SHA}" "${AFTER_SHA}")"
+          if grep -Eq '^(environments/shared/|modules/(ecr|api-publisher-identity)/)' <<< "${changed_files}"; then
+            echo 'shared=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'shared=false' >> "${GITHUB_OUTPUT}"
+          fi
+          if grep -Eq '^(environments/(homologacao|producao)/|modules/(network|eks|api-deployer-identity|platform-contract)/|bootstrap/|scripts/|\.github/workflows/terraform-|\.terraform-version$)' <<< "${changed_files}"; then
+            echo 'environment=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'environment=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+  deploy-homologacao:
+    name: Apply homologacao
+    if: vars.TF_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/homolog' && needs.changes.outputs.environment == 'true'
+    needs: changes
+    runs-on: ubuntu-latest
+    environment: homologacao
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: terraform-homologacao
+      cancel-in-progress: false
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
+      TF_BACKEND_REGION: ${{ vars.TF_BACKEND_REGION }}
+      TF_BACKEND_KMS_KEY_ID: ${{ vars.TF_BACKEND_KMS_KEY_ID }}
+      TF_VAR_github_oidc_provider_arn: ${{ vars.GITHUB_OIDC_PROVIDER_ARN }}
+      TF_VAR_cluster_endpoint_public_access_cidrs: ${{ vars.EKS_PUBLIC_ACCESS_CIDRS_JSON }}
+      TF_VAR_cluster_permissions_boundary_arn: ${{ vars.CLUSTER_PERMISSIONS_BOUNDARY_ARN }}
+      TF_VAR_node_permissions_boundary_arn: ${{ vars.NODE_PERMISSIONS_BOUNDARY_ARN }}
+      TF_VAR_deployer_permissions_boundary_arn: ${{ vars.DEPLOYER_PERMISSIONS_BOUNDARY_ARN }}
+    steps:
+      - name: Checkout merged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: 1.16.1
+
+      - name: Configure apply credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.TF_APPLY_ROLE_ARN }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Plan, enforce policy and apply
+        run: |
+          set -Eeuo pipefail
+          plan_file="${RUNNER_TEMP}/homologacao.tfplan"
+          bash scripts/terraform-plan.sh homologacao "${plan_file}"
+          bash scripts/terraform-plan-policy.sh homologacao "${plan_file}"
+          bash scripts/terraform-apply.sh homologacao "${plan_file}"
+
+      - name: Validate platform contract
+        run: |
+          set -Eeuo pipefail
+          aws ssm get-parameters --names \
+            /oficina/homologacao/platform/aws-region \
+            /oficina/homologacao/platform/vpc-id \
+            /oficina/homologacao/platform/public-subnet-ids \
+            /oficina/homologacao/platform/private-subnet-ids \
+            /oficina/homologacao/platform/database-subnet-ids \
+            /oficina/homologacao/platform/database-client-security-group-id \
+            /oficina/homologacao/platform/eks-cluster-name \
+            --query 'length(Parameters)' --output text | grep -Fx '7'
+          echo 'Terraform homologacao aplicado e contrato SSM validado.' >> "${GITHUB_STEP_SUMMARY}"
+
+  deploy-shared:
+    name: Apply shared
+    if: vars.TF_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && needs.changes.outputs.shared == 'true'
+    needs: changes
+    runs-on: ubuntu-latest
+    environment: shared
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: terraform-shared
+      cancel-in-progress: false
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
+      TF_BACKEND_REGION: ${{ vars.TF_BACKEND_REGION }}
+      TF_BACKEND_KMS_KEY_ID: ${{ vars.TF_BACKEND_KMS_KEY_ID }}
+      TF_VAR_github_oidc_provider_arn: ${{ vars.GITHUB_OIDC_PROVIDER_ARN }}
+      TF_VAR_publisher_permissions_boundary_arn: ${{ vars.PUBLISHER_PERMISSIONS_BOUNDARY_ARN }}
+    steps:
+      - name: Checkout merged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: 1.16.1
+
+      - name: Configure apply credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.TF_APPLY_ROLE_ARN }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Plan, enforce policy and apply
+        run: |
+          set -Eeuo pipefail
+          plan_file="${RUNNER_TEMP}/shared.tfplan"
+          bash scripts/terraform-plan.sh shared "${plan_file}"
+          bash scripts/terraform-plan-policy.sh shared "${plan_file}"
+          bash scripts/terraform-apply.sh shared "${plan_file}"
+
+      - name: Validate shared contract
+        run: |
+          set -Eeuo pipefail
+          aws ssm get-parameter --name /oficina/shared/ecr/repository-url --query 'Parameter.Name' --output text | grep -Fx '/oficina/shared/ecr/repository-url'
+          echo 'Terraform shared aplicado e contrato SSM validado.' >> "${GITHUB_STEP_SUMMARY}"
+
+  deploy-producao:
+    name: Apply producao
+    if: vars.TF_DEPLOY_ENABLED == 'true' && always() && github.ref == 'refs/heads/main' && needs.changes.outputs.environment == 'true' && (needs.deploy-shared.result == 'success' || needs.deploy-shared.result == 'skipped')
+    needs:
+      - changes
+      - deploy-shared
+    runs-on: ubuntu-latest
+    environment: producao
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: terraform-producao
+      cancel-in-progress: false
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
+      TF_BACKEND_REGION: ${{ vars.TF_BACKEND_REGION }}
+      TF_BACKEND_KMS_KEY_ID: ${{ vars.TF_BACKEND_KMS_KEY_ID }}
+      TF_VAR_github_oidc_provider_arn: ${{ vars.GITHUB_OIDC_PROVIDER_ARN }}
+      TF_VAR_cluster_endpoint_public_access_cidrs: ${{ vars.EKS_PUBLIC_ACCESS_CIDRS_JSON }}
+      TF_VAR_cluster_permissions_boundary_arn: ${{ vars.CLUSTER_PERMISSIONS_BOUNDARY_ARN }}
+      TF_VAR_node_permissions_boundary_arn: ${{ vars.NODE_PERMISSIONS_BOUNDARY_ARN }}
+      TF_VAR_deployer_permissions_boundary_arn: ${{ vars.DEPLOYER_PERMISSIONS_BOUNDARY_ARN }}
+    steps:
+      - name: Checkout merged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: 1.16.1
+
+      - name: Configure apply credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.TF_APPLY_ROLE_ARN }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Plan, enforce policy and apply
+        run: |
+          set -Eeuo pipefail
+          plan_file="${RUNNER_TEMP}/producao.tfplan"
+          bash scripts/terraform-plan.sh producao "${plan_file}"
+          bash scripts/terraform-plan-policy.sh producao "${plan_file}"
+          bash scripts/terraform-apply.sh producao "${plan_file}"
+
+      - name: Validate platform contract
+        run: |
+          set -Eeuo pipefail
+          aws ssm get-parameters --names \
+            /oficina/producao/platform/aws-region \
+            /oficina/producao/platform/vpc-id \
+            /oficina/producao/platform/public-subnet-ids \
+            /oficina/producao/platform/private-subnet-ids \
+            /oficina/producao/platform/database-subnet-ids \
+            /oficina/producao/platform/database-client-security-group-id \
+            /oficina/producao/platform/eks-cluster-name \
+            --query 'length(Parameters)' --output text | grep -Fx '7'
+          echo 'Terraform producao aplicado e contrato SSM validado.' >> "${GITHUB_STEP_SUMMARY}"
