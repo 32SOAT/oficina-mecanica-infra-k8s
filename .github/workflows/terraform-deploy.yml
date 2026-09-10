@@ -9,7 +9,9 @@ on:
       - "environments/**"
       - "modules/**"
       - "bootstrap/**"
-      - "scripts/**"
+      - "scripts/terraform-*.sh"
+      - "scripts/lib/terraform-common.sh"
+      - "scripts/classify-terraform-changes.sh"
       - ".github/workflows/terraform-*.yml"
       - ".terraform-version"
 
@@ -25,8 +27,8 @@ jobs:
     name: Detect affected stacks
     runs-on: ubuntu-latest
     outputs:
-      shared: ${{ steps.detect.outputs.shared }}
-      environment: ${{ steps.detect.outputs.environment }}
+      shared: ${{ steps.detect.outputs.shared_changed }}
+      environment: ${{ steps.detect.outputs.environment_changed }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -40,17 +42,9 @@ jobs:
           AFTER_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
-          changed_files="$(git diff --name-only "${BEFORE_SHA}" "${AFTER_SHA}")"
-          if grep -Eq '^(environments/shared/|modules/(ecr|api-publisher-identity)/)' <<< "${changed_files}"; then
-            echo 'shared=true' >> "${GITHUB_OUTPUT}"
-          else
-            echo 'shared=false' >> "${GITHUB_OUTPUT}"
-          fi
-          if grep -Eq '^(environments/(homologacao|producao)/|modules/(network|eks|api-deployer-identity|platform-contract)/|bootstrap/|scripts/|\.github/workflows/terraform-|\.terraform-version$)' <<< "${changed_files}"; then
-            echo 'environment=true' >> "${GITHUB_OUTPUT}"
-          else
-            echo 'environment=false' >> "${GITHUB_OUTPUT}"
-          fi
+          git diff --name-only "${BEFORE_SHA}" "${AFTER_SHA}" \
+            | bash scripts/classify-terraform-changes.sh \
+            >> "${GITHUB_OUTPUT}"
 
   deploy-homologacao:
     name: Apply homologacao

@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 workflow_dir="${repo_root}/.github/workflows"
+change_classifier="${repo_root}/scripts/classify-terraform-changes.sh"
 
 required_workflows=(
   terraform-ci.yml
@@ -17,6 +18,21 @@ for workflow in "${required_workflows[@]}"; do
     exit 1
   }
 done
+
+kubernetes_classification="$(printf '%s\n' 'scripts/kubernetes-render.sh' | bash "${change_classifier}")"
+grep -Fxq 'terraform_changed=false' <<< "${kubernetes_classification}"
+grep -Fxq 'shared_changed=false' <<< "${kubernetes_classification}"
+grep -Fxq 'environment_changed=false' <<< "${kubernetes_classification}"
+
+terraform_classification="$(printf '%s\n' 'scripts/terraform-plan.sh' | bash "${change_classifier}")"
+grep -Fxq 'terraform_changed=true' <<< "${terraform_classification}"
+grep -Fxq 'shared_changed=true' <<< "${terraform_classification}"
+grep -Fxq 'environment_changed=true' <<< "${terraform_classification}"
+
+if rg -n 'scripts/\*\*' "${workflow_dir}/terraform-ci.yml" "${workflow_dir}/terraform-deploy.yml"; then
+  printf 'Path genérico de scripts mistura mudanças Kubernetes e Terraform.\n' >&2
+  exit 1
+fi
 
 if rg -n 'AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|docker (build|tag|push)' "${workflow_dir}"; then
   printf 'Credencial persistente ou operação Docker encontrada em workflow Terraform.\n' >&2
