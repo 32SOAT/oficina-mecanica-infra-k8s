@@ -22,6 +22,7 @@ if bash "${policy_script}" homologacao feature/test README.md >/dev/null 2>&1; t
   printf 'Arquivo fora do overlay foi aceito.\n' >&2
   exit 1
 fi
+bash "${policy_script}" homologacao feature/base kubernetes/oficina-api/base/deployment.yaml >/dev/null
 
 bash "${policy_script}" homologacao promote/test kubernetes/oficina-api/overlays/producao/kustomization.yaml >/dev/null
 printf 'Kubernetes image policy checks passed.\n'

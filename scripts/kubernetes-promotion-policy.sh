@@ -15,9 +15,7 @@ shift 2
 [[ $# -gt 0 ]] || die 'Nenhum arquivo alterado foi informado.'
 
 for path in "$@"; do
-  [[ "${path}" == kubernetes/oficina-api/overlays/homologacao/kustomization.yaml ||
-    "${path}" == kubernetes/oficina-api/overlays/producao/kustomization.yaml ]] ||
-    die "Arquivo fora do escopo de promoção: ${path}"
+  [[ "${path}" == kubernetes/* ]] || die "Arquivo fora do escopo de promoção: ${path}"
 done
 
 if [[ "${base_ref}" == "main" || "${head_ref}" == "main" || "${head_ref}" == promote/* ]]; then
