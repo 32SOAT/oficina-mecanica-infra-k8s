@@ -550,7 +550,7 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
   }
 
   assert {
-    condition = alltrue(flatten([for boundaries in [aws_iam_policy.eks_cluster_boundary, aws_iam_policy.eks_node_boundary, aws_iam_policy.application_boundary] : [for stack, boundary in boundaries :
+    condition = alltrue(flatten([for boundaries in [aws_iam_policy.eks_cluster_boundary, aws_iam_policy.eks_node_boundary, aws_iam_policy.application_boundary, aws_iam_policy.api_publisher_boundary, aws_iam_policy.api_deployer_boundary] : [for stack, boundary in boundaries :
       length(boundary.policy) <= 6144 &&
       alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for action in statement.Action :
         !contains(["sts", "rds", "s3"], split(":", action)[0]) &&
@@ -568,10 +568,65 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
   assert {
     condition = alltrue([for boundary in values(aws_iam_policy.application_boundary) :
       alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for action in statement.Action :
-        !contains(["iam", "kms", "sts", "rds", "s3"], split(":", action)[0])
+        !contains(["iam", "kms", "sts", "rds", "s3"], split(":", action)[0]) &&
+        !contains([
+          "ecr:CompleteLayerUpload",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart",
+        ], action)
       ]]))
     ])
-    error_message = "Application boundaries must not inherit the narrowly scoped IAM/KMS exceptions required only by the EKS cluster role."
+    error_message = "Generic application boundaries must not inherit administrative services or ECR upload permissions."
+  }
+
+  assert {
+    condition = (
+      toset(keys(aws_iam_policy.api_publisher_boundary)) == toset(["shared"]) &&
+      toset(keys(aws_iam_policy.api_deployer_boundary)) == toset(["homologacao", "producao"]) &&
+      alltrue([for boundary in values(aws_iam_policy.api_publisher_boundary) :
+        toset(flatten([for statement in jsondecode(boundary.policy).Statement : statement.Action])) == toset([
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:CompleteLayerUpload",
+          "ecr:GetAuthorizationToken",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart",
+          "ssm:GetParameter",
+        ]) &&
+        length([for statement in jsondecode(boundary.policy).Statement : statement if
+          statement.Action == ["ecr:GetAuthorizationToken"] &&
+          statement.Resource == ["*"] &&
+          try(statement.Condition.StringEquals["aws:RequestedRegion"], "") == "us-east-1"
+        ]) == 1 &&
+        length([for statement in jsondecode(boundary.policy).Statement : statement if
+          statement.Action == ["ssm:GetParameter"] &&
+          statement.Resource == ["arn:aws:ssm:us-east-1:123456789012:parameter/oficina/shared/ecr/repository-url"]
+        ]) == 1 &&
+        length([for statement in jsondecode(boundary.policy).Statement : statement if
+          contains(statement.Action, "ecr:PutImage") &&
+          statement.Resource == ["arn:aws:ecr:us-east-1:123456789012:repository/oficina-mecanica-api"]
+        ]) == 1
+      ]) &&
+      alltrue([for stack, boundary in aws_iam_policy.api_deployer_boundary :
+        toset(flatten([for statement in jsondecode(boundary.policy).Statement : statement.Action])) == toset([
+          "ecr:DescribeImages",
+          "eks:DescribeCluster",
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+        ]) &&
+        length([for statement in jsondecode(boundary.policy).Statement : statement if
+          statement.Action == ["eks:DescribeCluster"] &&
+          statement.Resource == ["arn:aws:eks:us-east-1:123456789012:cluster/oficina-mecanica-${stack}"]
+        ]) == 1 &&
+        length([for statement in jsondecode(boundary.policy).Statement : statement if
+          statement.Action == ["ecr:DescribeImages"] &&
+          statement.Resource == ["arn:aws:ecr:us-east-1:123456789012:repository/oficina-mecanica-api"]
+        ]) == 1 &&
+        length(one([for statement in jsondecode(boundary.policy).Statement : statement.Resource if contains(statement.Action, "ssm:GetParameter")])) == 7
+      ])
+    )
+    error_message = "Publisher and deployer boundaries must expose only their exact ECR, EKS and SSM runtime contracts."
   }
 
   assert {
@@ -589,6 +644,34 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
       ])
     ])
     error_message = "Role delegation must select the exact protected boundary for cluster, node or future stack roles."
+  }
+
+  assert {
+    condition = (
+      length([for statement in jsondecode(aws_iam_policy.role_delegation["shared"].policy).Statement : statement if
+        statement.Effect == "Allow" &&
+        contains(statement.Action, "iam:CreateRole") &&
+        statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-shared-api-publisher"] &&
+        try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-shared-api-publisher-boundary"
+      ]) == 1 &&
+      alltrue([for stack in ["homologacao", "producao"] :
+        length([for statement in jsondecode(aws_iam_policy.role_delegation[stack].policy).Statement : statement if
+          statement.Effect == "Allow" &&
+          contains(statement.Action, "iam:CreateRole") &&
+          statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-api-deployer"] &&
+          try(statement.Condition.StringEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-api-deployer-boundary"
+        ]) == 1
+      ]) &&
+      alltrue([for stack in ["shared", "homologacao", "producao"] :
+        length([for statement in jsondecode(aws_iam_policy.role_delegation[stack].policy).Statement : statement if
+          statement.Effect == "Deny" &&
+          contains(statement.Action, "iam:CreateRole") &&
+          statement.Resource == ["arn:aws:iam::123456789012:role/oficina-mecanica-${stack}-${stack == "shared" ? "api-publisher" : "api-deployer"}"] &&
+          try(statement.Condition.ArnNotEquals["iam:PermissionsBoundary"], "") == "arn:aws:iam::123456789012:policy/oficina-mecanica-${stack}-${stack == "shared" ? "api-publisher" : "api-deployer"}-boundary"
+        ]) == 1
+      ])
+    )
+    error_message = "Delegation must create the deterministic publisher and deployer roles only with their matching boundaries and deny alternatives."
   }
 
   assert {
@@ -662,7 +745,10 @@ run "outputs_reference_the_managed_identities" {
         output.permissions_boundary_arns[stack].eks_cluster == aws_iam_policy.eks_cluster_boundary[stack].arn &&
         output.permissions_boundary_arns[stack].eks_node == aws_iam_policy.eks_node_boundary[stack].arn &&
         output.permissions_boundary_arns[stack].application == aws_iam_policy.application_boundary[stack].arn
-      ])
+      ]) &&
+      output.permissions_boundary_arns.shared.api_publisher == aws_iam_policy.api_publisher_boundary["shared"].arn &&
+      output.permissions_boundary_arns.homologacao.api_deployer == aws_iam_policy.api_deployer_boundary["homologacao"].arn &&
+      output.permissions_boundary_arns.producao.api_deployer == aws_iam_policy.api_deployer_boundary["producao"].arn
     )
     error_message = "The bootstrap outputs must expose the managed identities and unambiguous role-specific boundary ARNs."
   }

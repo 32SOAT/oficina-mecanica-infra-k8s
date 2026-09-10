@@ -4,14 +4,22 @@ locals {
   state_arns   = { for stack, key in local.state_keys : stack => "${var.state_bucket_arn}/${key}" }
   role_arns    = { for stack in local.stacks : stack => "arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-*" }
   permissions_boundary_arns = { for stack in local.stacks : stack => {
-    application = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-runtime-boundary"
-    eks_cluster = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-eks-cluster-boundary"
-    eks_node    = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-eks-node-boundary"
+    application   = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-runtime-boundary"
+    eks_cluster   = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-eks-cluster-boundary"
+    eks_node      = "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-eks-node-boundary"
+    api_publisher = stack == "shared" ? "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-shared-api-publisher-boundary" : null
+    api_deployer  = contains(local.environments, stack) ? "arn:aws:iam::${var.aws_account_id}:policy/${var.project_name}-${stack}-api-deployer-boundary" : null
   } }
   eks_role_arns = { for stack in local.stacks : stack => {
     cluster = "arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-eks-cluster"
     node    = "arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-eks-node"
   } }
+  api_identity_role_arns = { for stack in local.stacks : stack =>
+    "arn:aws:iam::${var.aws_account_id}:role/${var.project_name}-${stack}-${stack == "shared" ? "api-publisher" : "api-deployer"}"
+  }
+  api_identity_boundary_arns = { for stack in local.stacks : stack =>
+    stack == "shared" ? local.permissions_boundary_arns[stack].api_publisher : local.permissions_boundary_arns[stack].api_deployer
+  }
   delegated_role_actions = ["iam:CreateRole", "iam:PutRolePermissionsBoundary", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"]
   eks_managed_policies_by_role = {
     cluster = ["arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"]
@@ -21,8 +29,18 @@ locals {
       "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
     ]
   }
-  cluster_arns = { for stack in local.stacks : stack => "arn:aws:eks:${local.regional_arn}:cluster/${var.project_name}-${stack}" }
-  ecr_arn      = "arn:aws:ecr:${local.regional_arn}:repository/${var.project_name}-api"
+  cluster_arns          = { for stack in local.stacks : stack => "arn:aws:eks:${local.regional_arn}:cluster/${var.project_name}-${stack}" }
+  ecr_arn               = "arn:aws:ecr:${local.regional_arn}:repository/${var.project_name}-api"
+  ecr_url_parameter_arn = "arn:aws:ssm:${local.regional_arn}:parameter/oficina/shared/ecr/repository-url"
+  platform_parameter_arns = { for stack in local.environments : stack => [for name in [
+    "aws-region",
+    "vpc-id",
+    "public-subnet-ids",
+    "private-subnet-ids",
+    "database-subnet-ids",
+    "database-client-security-group-id",
+    "eks-cluster-name",
+  ] : "arn:aws:ssm:${local.regional_arn}:parameter/oficina/${stack}/platform/${name}"] }
   eks_arns = { for stack in local.environments : stack => [
     local.cluster_arns[stack],
     "arn:aws:eks:${local.regional_arn}:nodegroup/${var.project_name}-${stack}/*",
@@ -178,6 +196,24 @@ locals {
       Resource = [local.role_arns[stack]]
       Condition = { StringEquals = {
         "iam:PermissionsBoundary" = local.permissions_boundary_arns[stack].application
+      } }
+    },
+    {
+      Sid      = "ManageAPIIdentityRole"
+      Effect   = "Allow"
+      Action   = local.delegated_role_actions
+      Resource = [local.api_identity_role_arns[stack]]
+      Condition = { StringEquals = {
+        "iam:PermissionsBoundary" = local.api_identity_boundary_arns[stack]
+      } }
+    },
+    {
+      Sid      = "RejectWrongAPIIdentityBoundary"
+      Effect   = "Deny"
+      Action   = local.delegated_role_actions
+      Resource = [local.api_identity_role_arns[stack]]
+      Condition = { ArnNotEquals = {
+        "iam:PermissionsBoundary" = local.api_identity_boundary_arns[stack]
       } }
     },
     {
@@ -410,6 +446,73 @@ resource "aws_iam_policy" "application_boundary" {
         Sid      = "PullProjectImages"
         Effect   = "Allow"
         Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:DescribeImages", "ecr:GetDownloadUrlForLayer"]
+        Resource = [local.ecr_arn]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_policy" "api_publisher_boundary" {
+  for_each    = toset(["shared"])
+  name        = "${var.project_name}-${each.key}-api-publisher-boundary"
+  description = "Maximum manual API image publishing permissions."
+  tags        = merge(local.tags, { Stack = each.key })
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AuthenticateToRegionalECR"
+        Effect    = "Allow"
+        Action    = ["ecr:GetAuthorizationToken"]
+        Resource  = ["*"]
+        Condition = { StringEquals = { "aws:RequestedRegion" = var.aws_region } }
+      },
+      {
+        Sid      = "ReadRepositoryContract"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = [local.ecr_url_parameter_arn]
+      },
+      {
+        Sid    = "UploadProjectImages"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:CompleteLayerUpload",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart",
+        ]
+        Resource = [local.ecr_arn]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_policy" "api_deployer_boundary" {
+  for_each    = local.environments
+  name        = "${var.project_name}-${each.key}-api-deployer-boundary"
+  description = "Maximum API deployment permissions for ${each.key}."
+  tags        = merge(local.tags, { Stack = each.key })
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "DiscoverOwnCluster"
+        Effect   = "Allow"
+        Action   = ["eks:DescribeCluster"]
+        Resource = [local.cluster_arns[each.key]]
+      },
+      {
+        Sid      = "ReadEnvironmentContract"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = local.platform_parameter_arns[each.key]
+      },
+      {
+        Sid      = "ValidateProjectImage"
+        Effect   = "Allow"
+        Action   = ["ecr:DescribeImages"]
         Resource = [local.ecr_arn]
       },
     ]

@@ -41,14 +41,19 @@ producao environment while retaining the read-only plan permissions.
   controllers. EKS service roles use `${project_name}-${stack}-eks-*`. Managed
   policy attachment is limited to the four enumerated EKS/node policies;
   `PassRole` is limited to these service roles and EKS/EC2 service principals.
-  CreateRole and trust/inline-policy changes require one of three exact,
-  bootstrap-owned boundaries: `${project_name}-${stack}-eks-cluster-boundary`
+  CreateRole and trust/inline-policy changes require exact bootstrap-owned
+  boundaries: `${project_name}-${stack}-eks-cluster-boundary`
   for `${project_name}-${stack}-eks-cluster`,
   `${project_name}-${stack}-eks-node-boundary` for
   `${project_name}-${stack}-eks-node`, or
   `${project_name}-${stack}-runtime-boundary` for other current and future stack
-  roles. EKS managed-policy attachment is split across the exact cluster and
-  node roles and requires their matching boundary. The cluster maximum mirrors
+  roles. The deterministic `${project_name}-shared-api-publisher` role instead
+  requires its `api-publisher-boundary`; homologacao/producao
+  `${project_name}-${stack}-api-deployer` roles require their matching
+  `api-deployer-boundary`. These maxima grant only the ECR, EKS and SSM calls
+  used by their corresponding API workflows. The generic runtime boundary has
+  no ECR upload permission. EKS managed-policy attachment is split across the
+  exact cluster and node roles and requires their matching boundary. The cluster maximum mirrors
   the complete `AmazonEKSClusterPolicy` v10 action/resource contract, including
   its official ELB service-linked-role and orphaned-CNI ENI conditions. It allows
   only read-only `kms:DescribeKey` and explicitly denies that action on the
@@ -72,7 +77,8 @@ producao environment while retaining the read-only plan permissions.
   beyond the conditioned ELB service-linked role creation. Controllers cannot
   remove, modify, version or delete a boundary.
   `permissions_boundary_arns` exposes an
-  unambiguous `eks_cluster`, `eks_node` and `application` ARN for every stack so
+  unambiguous `eks_cluster`, `eks_node` and `application` ARN for every stack,
+  plus `api_publisher` for shared and `api_deployer` for each environment, so
   downstream modules can apply the correct contract. Role and instance-profile
   reads remain scoped to the stack prefix.
 - Network resources and EKS creation must carry `Project = project_name` and

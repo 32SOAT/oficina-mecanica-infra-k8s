@@ -39,10 +39,12 @@ output "producao_destroy_role_arn" {
 }
 
 output "permissions_boundary_arns" {
-  description = "Role-specific bootstrap-managed boundary ARNs by stack for EKS cluster, EKS node/CNI and application roles."
+  description = "Role-specific bootstrap-managed boundary ARNs by stack for EKS and application identities."
   value = { for stack in local.stacks : stack => {
-    eks_cluster = aws_iam_policy.eks_cluster_boundary[stack].arn
-    eks_node    = aws_iam_policy.eks_node_boundary[stack].arn
-    application = aws_iam_policy.application_boundary[stack].arn
+    eks_cluster   = aws_iam_policy.eks_cluster_boundary[stack].arn
+    eks_node      = aws_iam_policy.eks_node_boundary[stack].arn
+    application   = aws_iam_policy.application_boundary[stack].arn
+    api_publisher = stack == "shared" ? aws_iam_policy.api_publisher_boundary[stack].arn : null
+    api_deployer  = contains(local.environments, stack) ? aws_iam_policy.api_deployer_boundary[stack].arn : null
   } }
 }
