@@ -32,15 +32,18 @@ locals {
   cluster_arns          = { for stack in local.stacks : stack => "arn:aws:eks:${local.regional_arn}:cluster/${var.project_name}-${stack}" }
   ecr_arn               = "arn:aws:ecr:${local.regional_arn}:repository/${var.project_name}-api"
   ecr_url_parameter_arn = "arn:aws:ssm:${local.regional_arn}:parameter/oficina/shared/ecr/repository-url"
-  platform_parameter_arns = { for stack in local.environments : stack => [for name in [
-    "aws-region",
-    "vpc-id",
-    "public-subnet-ids",
-    "private-subnet-ids",
-    "database-subnet-ids",
-    "database-client-security-group-id",
-    "eks-cluster-name",
-  ] : "arn:aws:ssm:${local.regional_arn}:parameter/oficina/${stack}/platform/${name}"] }
+  platform_parameter_arns = { for stack in local.environments : stack => concat(
+    [for name in [
+      "aws-region",
+      "vpc-id",
+      "public-subnet-ids",
+      "private-subnet-ids",
+      "database-subnet-ids",
+      "database-client-security-group-id",
+      "eks-cluster-name",
+    ] : "arn:aws:ssm:${local.regional_arn}:parameter/oficina/${stack}/platform/${name}"],
+    [local.ecr_url_parameter_arn]
+  ) }
   eks_arns = { for stack in local.environments : stack => [
     local.cluster_arns[stack],
     "arn:aws:eks:${local.regional_arn}:nodegroup/${var.project_name}-${stack}/*",
@@ -479,6 +482,7 @@ resource "aws_iam_policy" "api_publisher_boundary" {
         Action = [
           "ecr:BatchCheckLayerAvailability",
           "ecr:CompleteLayerUpload",
+          "ecr:DescribeImages",
           "ecr:InitiateLayerUpload",
           "ecr:PutImage",
           "ecr:UploadLayerPart",

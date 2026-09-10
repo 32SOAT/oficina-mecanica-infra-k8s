@@ -559,7 +559,11 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
         (split(":", action)[0] != "kms" || action == "kms:DescribeKey")
       ]])) &&
       alltrue(flatten([for statement in jsondecode(boundary.policy).Statement : [for resource in statement.Resource :
-        alltrue([for other_stack in ["shared", "homologacao", "producao"] : other_stack == stack || !strcontains(resource, other_stack)])
+        alltrue([for other_stack in ["shared", "homologacao", "producao"] :
+          other_stack == stack ||
+          !strcontains(resource, other_stack) ||
+          (contains(["homologacao", "producao"], stack) && resource == "arn:aws:ssm:us-east-1:123456789012:parameter/oficina/shared/ecr/repository-url")
+        ])
       ]]))
     ]]))
     error_message = "All boundaries must fit IAM quota and exclude wildcard actions, prohibited services, administrative IAM/KMS use and cross-stack ARNs."
@@ -588,6 +592,7 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
         toset(flatten([for statement in jsondecode(boundary.policy).Statement : statement.Action])) == toset([
           "ecr:BatchCheckLayerAvailability",
           "ecr:CompleteLayerUpload",
+          "ecr:DescribeImages",
           "ecr:GetAuthorizationToken",
           "ecr:InitiateLayerUpload",
           "ecr:PutImage",
@@ -623,7 +628,18 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
           statement.Action == ["ecr:DescribeImages"] &&
           statement.Resource == ["arn:aws:ecr:us-east-1:123456789012:repository/oficina-mecanica-api"]
         ]) == 1 &&
-        length(one([for statement in jsondecode(boundary.policy).Statement : statement.Resource if contains(statement.Action, "ssm:GetParameter")])) == 7
+        toset(one([for statement in jsondecode(boundary.policy).Statement : statement.Resource if contains(statement.Action, "ssm:GetParameter")])) == toset(concat(
+          [for name in [
+            "aws-region",
+            "vpc-id",
+            "public-subnet-ids",
+            "private-subnet-ids",
+            "database-subnet-ids",
+            "database-client-security-group-id",
+            "eks-cluster-name",
+          ] : "arn:aws:ssm:us-east-1:123456789012:parameter/oficina/${stack}/platform/${name}"],
+          ["arn:aws:ssm:us-east-1:123456789012:parameter/oficina/shared/ecr/repository-url"]
+        ))
       ])
     )
     error_message = "Publisher and deployer boundaries must expose only their exact ECR, EKS and SSM runtime contracts."

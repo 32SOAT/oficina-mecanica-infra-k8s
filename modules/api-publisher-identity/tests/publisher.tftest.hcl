@@ -39,7 +39,7 @@ run "publisher_trust_and_permissions_are_exact" {
       } &&
       !strcontains(aws_iam_role.publisher.assume_role_policy, "*")
     )
-    error_message = "Publisher must use its exact API/environment OIDC trust and its bootstrap its bootstrap boundary."
+    error_message = "Publisher must use its exact API/environment OIDC trust and its bootstrap boundary."
   }
 
   assert {
@@ -57,6 +57,7 @@ run "publisher_trust_and_permissions_are_exact" {
         toset(statement.Action) == toset([
           "ecr:BatchCheckLayerAvailability",
           "ecr:CompleteLayerUpload",
+          "ecr:DescribeImages",
           "ecr:InitiateLayerUpload",
           "ecr:PutImage",
           "ecr:UploadLayerPart",
@@ -64,6 +65,20 @@ run "publisher_trust_and_permissions_are_exact" {
       ]) == 1
     )
     error_message = "Publisher must receive only global regional auth, one contract read, and upload on the exact repository."
+  }
+
+  assert {
+    condition = toset(flatten([for statement in jsondecode(aws_iam_role_policy.publisher.policy).Statement : statement.Action])) == toset([
+      "ecr:GetAuthorizationToken",
+      "ssm:GetParameter",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:CompleteLayerUpload",
+      "ecr:DescribeImages",
+      "ecr:InitiateLayerUpload",
+      "ecr:PutImage",
+      "ecr:UploadLayerPart",
+    ])
+    error_message = "Publisher must grant the complete and exclusive permission set needed to publish and resolve an image digest."
   }
 
   assert {

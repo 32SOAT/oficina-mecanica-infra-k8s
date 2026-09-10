@@ -4,8 +4,8 @@ variable "repository_name" {
   default     = "oficina-mecanica-api"
 
   validation {
-    condition     = trimspace(var.repository_name) != "" && can(regex("^[a-z0-9]+(?:[._/-][a-z0-9]+)*$", var.repository_name))
-    error_message = "repository_name deve ser um nome ECR nao vazio e valido."
+    condition     = var.repository_name == "oficina-mecanica-api"
+    error_message = "repository_name deve ser oficina-mecanica-api."
   }
 }
 

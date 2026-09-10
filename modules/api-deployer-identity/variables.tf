@@ -31,11 +31,11 @@ variable "github_organization" {
 
 variable "github_repository" {
   type        = string
-  description = "Repositorio autorizado a executar deploy."
+  description = "Repositorio de infraestrutura autorizado a executar deploy."
 
   validation {
-    condition     = var.github_repository == "oficina-mecanica-api"
-    error_message = "github_repository deve ser oficina-mecanica-api."
+    condition     = var.github_repository == "oficina-mecanica-infra-k8s"
+    error_message = "github_repository deve ser oficina-mecanica-infra-k8s."
   }
 }
 

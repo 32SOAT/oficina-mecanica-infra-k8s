@@ -12,9 +12,12 @@ locals {
     "database-client-security-group-id",
     "eks-cluster-name",
   ]
-  parameter_arns = [for name in local.parameter_names :
-    "arn:aws:ssm:${local.aws_region}:${local.aws_account_id}:parameter/oficina/${var.environment}/platform/${name}"
-  ]
+  parameter_arns = concat(
+    [for name in local.parameter_names :
+      "arn:aws:ssm:${local.aws_region}:${local.aws_account_id}:parameter/oficina/${var.environment}/platform/${name}"
+    ],
+    ["arn:aws:ssm:${local.aws_region}:${local.aws_account_id}:parameter/oficina/shared/ecr/repository-url"]
+  )
   tags = merge(var.tags, {
     Project     = var.project_name
     Environment = var.environment

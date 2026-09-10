@@ -16,7 +16,7 @@ variables {
   project_name             = "oficina-mecanica"
   environment              = "homologacao"
   github_organization      = "32SOAT"
-  github_repository        = "oficina-mecanica-api"
+  github_repository        = "oficina-mecanica-infra-k8s"
   github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
   github_environment       = "homologacao"
   cluster_name             = "oficina-mecanica-homologacao"
@@ -36,7 +36,7 @@ run "deployer_is_limited_to_environment_metadata_and_namespace" {
       one(jsondecode(aws_iam_role.deployer.assume_role_policy).Statement).Principal == { Federated = var.github_oidc_provider_arn } &&
       one(jsondecode(aws_iam_role.deployer.assume_role_policy).Statement).Condition.StringEquals == {
         "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        "token.actions.githubusercontent.com:sub" = "repo:32SOAT/oficina-mecanica-api:environment:homologacao"
+        "token.actions.githubusercontent.com:sub" = "repo:32SOAT/oficina-mecanica-infra-k8s:environment:homologacao"
       } &&
       !strcontains(aws_iam_role.deployer.assume_role_policy, "*")
     )
@@ -61,9 +61,10 @@ run "deployer_is_limited_to_environment_metadata_and_namespace" {
         "arn:aws:ssm:us-east-1:123456789012:parameter/oficina/homologacao/platform/database-subnet-ids",
         "arn:aws:ssm:us-east-1:123456789012:parameter/oficina/homologacao/platform/database-client-security-group-id",
         "arn:aws:ssm:us-east-1:123456789012:parameter/oficina/homologacao/platform/eks-cluster-name",
+        "arn:aws:ssm:us-east-1:123456789012:parameter/oficina/shared/ecr/repository-url",
       ])
     )
-    error_message = "Deployer permissions must read only its cluster, seven environment parameters, and ECR image metadata."
+    error_message = "Deployer permissions must read only its cluster, seven environment parameters, the shared ECR URL, and image metadata."
   }
 
   assert {

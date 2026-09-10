@@ -65,3 +65,9 @@ run "reject_empty_repository_name" {
   variables { repository_name = " " }
   expect_failures = [var.repository_name]
 }
+
+run "reject_other_repository_name" {
+  command = plan
+  variables { repository_name = "another-api" }
+  expect_failures = [var.repository_name]
+}

@@ -51,8 +51,13 @@ producao environment while retaining the read-only plan permissions.
   requires its `api-publisher-boundary`; homologacao/producao
   `${project_name}-${stack}-api-deployer` roles require their matching
   `api-deployer-boundary`. These maxima grant only the ECR, EKS and SSM calls
-  used by their corresponding API workflows. The generic runtime boundary has
-  no ECR upload permission. EKS managed-policy attachment is split across the
+  used by their corresponding image-delivery workflows. The publisher can
+  resolve the digest it just uploaded. Each deployer can read its seven
+  environment parameters plus the exact shared ECR URL parameter used to
+  validate the official registry. Kubernetes deploy trust belongs exclusively
+  to `32SOAT/oficina-mecanica-infra-k8s`; the API repository receives no EKS
+  namespace edit access. The generic runtime boundary has no ECR upload
+  permission. EKS managed-policy attachment is split across the
   exact cluster and node roles and requires their matching boundary. The cluster maximum mirrors
   the complete `AmazonEKSClusterPolicy` v10 action/resource contract, including
   its official ELB service-linked-role and orphaned-CNI ENI conditions. It allows
