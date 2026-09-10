@@ -30,4 +30,8 @@ for test_script in tests/shell/test-*.sh; do
   bash "${test_script}"
 done
 
-shellcheck scripts/*.sh scripts/lib/*.sh tests/shell/test-*.sh
+for test_script in tests/kubernetes/test-*.sh; do
+  bash "${test_script}"
+done
+
+shellcheck scripts/*.sh scripts/lib/*.sh tests/shell/test-*.sh tests/kubernetes/test-*.sh

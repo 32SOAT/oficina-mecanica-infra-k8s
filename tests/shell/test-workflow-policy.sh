@@ -10,6 +10,8 @@ required_workflows=(
   terraform-deploy.yml
   terraform-drift.yml
   terraform-destroy.yml
+  kubernetes-ci.yml
+  kubernetes-deploy.yml
 )
 
 for workflow in "${required_workflows[@]}"; do
@@ -150,6 +152,25 @@ for variable in cluster_endpoint_public_access_cidrs cluster_permissions_boundar
   rg -q "TF_VAR_${variable}=" "${ci_workflow}"
 done
 
+kubernetes_ci_workflow="${workflow_dir}/kubernetes-ci.yml"
+kubernetes_deploy_workflow="${workflow_dir}/kubernetes-deploy.yml"
+rg -q 'name:[[:space:]]+kubernetes / gate' "${kubernetes_ci_workflow}"
+rg -q 'pull_request:' "${kubernetes_ci_workflow}"
+rg -q 'kubernetes-validate.sh' "${kubernetes_ci_workflow}"
+rg -q 'kubernetes-promotion-policy.sh' "${kubernetes_ci_workflow}"
+rg -q 'workflow_dispatch:' "${kubernetes_deploy_workflow}"
+rg -q 'KUBERNETES_HOMOLOGACAO_DEPLOY_ENABLED' "${kubernetes_deploy_workflow}"
+rg -q 'KUBERNETES_PRODUCAO_DEPLOY_ENABLED' "${kubernetes_deploy_workflow}"
+rg -q 'scripts/kubernetes-deploy.sh' "${kubernetes_deploy_workflow}"
+if rg -n 'docker (build|push)|terraform (apply|plan)|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY' "${kubernetes_ci_workflow}" "${kubernetes_deploy_workflow}"; then
+  printf 'Workflow Kubernetes contém build, Terraform ou credencial persistente.\n' >&2
+  exit 1
+fi
+if rg -n 'image_(tag|digest|ref):' "${kubernetes_deploy_workflow}"; then
+  printf 'Workflow Kubernetes aceita imagem como input.\n' >&2
+  exit 1
+fi
+
 for workflow in "${deploy_workflow}" "${drift_workflow}" "${destroy_workflow}"; do
   rg -q 'TF_VAR_cluster_endpoint_public_access_cidrs:' "${workflow}"
   rg -q 'TF_VAR_cluster_permissions_boundary_arn:' "${workflow}"
@@ -163,7 +184,7 @@ rg -q 'TF_VAR_publisher_permissions_boundary_arn:' "${destroy_workflow}"
 
 oidc_jobs="$(rg -c 'configure-aws-credentials@' "${workflow_dir}" | awk -F: '{ total += $2 } END { print total + 0 }')"
 identity_checks="$(rg -c 'arn:aws:sts::\$\{AWS_ACCOUNT_ID\}:assumed-role/\$\{role_name\}/gha-\$\{GITHUB_RUN_ID\}' "${workflow_dir}" | awk -F: '{ total += $2 } END { print total + 0 }')"
-[[ "${oidc_jobs}" -eq 7 ]]
+[[ "${oidc_jobs}" -eq 8 ]]
 [[ "${identity_checks}" -eq "${oidc_jobs}" ]] || {
   printf 'Cada job OIDC deve validar a conta e a role STS exatas.\n' >&2
   exit 1
