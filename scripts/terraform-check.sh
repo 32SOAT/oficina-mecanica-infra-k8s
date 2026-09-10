@@ -30,8 +30,16 @@ for test_script in tests/shell/test-*.sh; do
   bash "${test_script}"
 done
 
-for test_script in tests/kubernetes/test-*.sh; do
-  bash "${test_script}"
-done
+shopt -s nullglob
+kubernetes_tests=(tests/kubernetes/test-*.sh)
+if ((${#kubernetes_tests[@]})); then
+  for test_script in "${kubernetes_tests[@]}"; do
+    bash "${test_script}"
+  done
+fi
 
-shellcheck scripts/*.sh scripts/lib/*.sh tests/shell/test-*.sh tests/kubernetes/test-*.sh
+shellcheck_args=(scripts/*.sh scripts/lib/*.sh tests/shell/test-*.sh)
+if ((${#kubernetes_tests[@]})); then
+  shellcheck_args+=("${kubernetes_tests[@]}")
+fi
+shellcheck "${shellcheck_args[@]}"
