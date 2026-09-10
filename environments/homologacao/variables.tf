@@ -85,9 +85,15 @@ variable "cluster_endpoint_public_access_cidrs" {
   validation {
     condition = (
       length(var.cluster_endpoint_public_access_cidrs) > 0 &&
-      !contains(var.cluster_endpoint_public_access_cidrs, "0.0.0.0/0") &&
-      !contains(var.cluster_endpoint_public_access_cidrs, "::/0") &&
-      alltrue([for cidr in var.cluster_endpoint_public_access_cidrs : can(cidrhost(cidr, 0))])
+      alltrue([
+        for cidr in var.cluster_endpoint_public_access_cidrs : try(
+          !contains(
+            ["0.0.0.0/0", "::/0"],
+            "${cidrhost(cidr, 0)}/${tonumber(split("/", cidr)[1])}"
+          ),
+          false
+        )
+      ])
     )
     error_message = "Informe ao menos um CIDR valido e restrito para o endpoint publico."
   }

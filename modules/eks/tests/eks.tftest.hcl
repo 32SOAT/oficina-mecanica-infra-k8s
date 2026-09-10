@@ -180,6 +180,18 @@ run "reject_open_public_endpoint" {
   expect_failures = [var.cluster_endpoint_public_access_cidrs]
 }
 
+run "reject_noncanonical_ipv4_global_route" {
+  command = plan
+  variables { cluster_endpoint_public_access_cidrs = ["0.0.0.0/00"] }
+  expect_failures = [var.cluster_endpoint_public_access_cidrs]
+}
+
+run "reject_expanded_ipv6_global_route" {
+  command = plan
+  variables { cluster_endpoint_public_access_cidrs = ["0:0:0:0:0:0:0:0/0"] }
+  expect_failures = [var.cluster_endpoint_public_access_cidrs]
+}
+
 run "reject_unpinned_cluster_version" {
   command = plan
   variables { cluster_version = "1.35" }

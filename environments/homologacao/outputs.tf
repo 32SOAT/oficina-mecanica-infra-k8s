@@ -23,7 +23,7 @@ output "database_subnet_ids" {
   value       = module.network.database_subnet_ids
 }
 
-output "eks_cluster_name" {
+output "cluster_name" {
   description = "Nome do cluster EKS de homologacao."
   value       = module.eks.cluster_name
 }
@@ -33,7 +33,7 @@ output "database_client_security_group_id" {
   value       = module.eks.database_client_security_group_id
 }
 
-output "api_deployer_role_arn" {
+output "deployer_role_arn" {
   description = "ARN da role OIDC de deploy em homologacao."
   value       = module.api_deployer_identity.deployer_role_arn
 }
