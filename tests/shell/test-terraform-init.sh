@@ -38,7 +38,7 @@ cd "${test_bin}"
 
 # Missing backend hardening, an incorrect stack path/key, or a missing CI lockfile
 # safeguard must make this test fail.
-bash "${repo_root}/scripts/terraform-init.sh" homologacao
+env -u CI bash "${repo_root}/scripts/terraform-init.sh" homologacao
 
 grep -Fxq -- "-chdir=${repo_root}/environments/homologacao" "${terraform_arguments}"
 grep -Fxq -- 'init' "${terraform_arguments}"
