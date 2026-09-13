@@ -91,6 +91,8 @@ rg -q 'github.event.pull_request.head.repo.full_name == github.repository' "${ci
 rg -q 'TRIVY_VERSION:[[:space:]]+0\.74\.0' "${ci_workflow}"
 rg -q 'TRIVY_LINUX_AMD64_SHA256:[[:space:]]+2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a' "${ci_workflow}"
 rg -q 'github.com/rhysd/actionlint/cmd/actionlint@v1\.7\.12' "${ci_workflow}"
+rg -q 'Install ripgrep' "${ci_workflow}"
+rg -q 'apt-get install -y ripgrep' "${ci_workflow}"
 rg -q 'terraform_changed:' "${ci_workflow}"
 rg -q "needs\.static-check\.outputs\.terraform_changed == 'true'" "${ci_workflow}"
 rg -q 'PLAN_REQUIRED:' "${ci_workflow}"

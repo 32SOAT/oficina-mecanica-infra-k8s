@@ -66,6 +66,12 @@ jobs:
           GOBIN="${bin_dir}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "${bin_dir}" >> "${GITHUB_PATH}"
 
+      - name: Install ripgrep
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
       - name: Validate Terraform and shell
         run: bash scripts/terraform-check.sh
 
