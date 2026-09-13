@@ -27,10 +27,11 @@ jobs:
           set -Eeuo pipefail
           mapfile -t changed_paths < <(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}")
           kubernetes_changed=false
+          kubernetes_paths=()
           for changed_path in "${changed_paths[@]}"; do
             if [[ "${changed_path}" == kubernetes/* ]]; then
               kubernetes_changed=true
-              break
+              kubernetes_paths+=("${changed_path}")
             fi
           done
           if [[ "${kubernetes_changed}" != true ]]; then
@@ -47,7 +48,7 @@ jobs:
             bash scripts/kubernetes-validate.sh "${environment}"
           done
           bash scripts/kubernetes-promotion-policy.sh \
-            "${{ github.base_ref }}" "${{ github.head_ref }}" "${changed_paths[@]}"
+            "${{ github.base_ref }}" "${{ github.head_ref }}" "${kubernetes_paths[@]}"
 
   gate:
     name: kubernetes / gate
