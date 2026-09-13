@@ -11,10 +11,10 @@ cp "${repo_root}/scripts/lib/terraform-common.sh" "${test_dir}/scripts/lib/"
 cp "${repo_root}/tests/fixtures/saved-plan/main.tf" "${stack_dir}/"
 cp "${repo_root}/environments/shared/.terraform.lock.hcl" "${stack_dir}/"
 
-# Use the already initialized, checksum-locked provider from the full suite.
 # The fixture plans only terraform_data: no AWS credentials, client or backend.
-terraform -chdir="${stack_dir}" init -backend=false -input=false -lockfile=readonly \
-  -plugin-dir="${repo_root}/environments/shared/.terraform/providers" >/dev/null
+# Let Terraform install the provider through its normal checksum-verified path;
+# reusing an extracted package via -plugin-dir bypasses the platform lock data.
+terraform -chdir="${stack_dir}" init -backend=false -input=false -lockfile=readonly >/dev/null
 terraform -chdir="${stack_dir}" plan -input=false -refresh=false \
   -out="${test_dir}/plans with spaces/saved.tfplan" >/dev/null
 cd "${test_dir}"

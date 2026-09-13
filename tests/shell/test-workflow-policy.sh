@@ -177,6 +177,11 @@ if rg -n 'image_(tag|digest|ref):' "${kubernetes_deploy_workflow}"; then
   exit 1
 fi
 
+if rg -n -- '-plugin-dir=.*\.terraform/providers' "${repo_root}/tests/shell/test-terraform-plan-policy-integration.sh"; then
+  printf 'Teste Terraform reutiliza pacote extraído fora do cache verificado.\n' >&2
+  exit 1
+fi
+
 for workflow in "${deploy_workflow}" "${drift_workflow}" "${destroy_workflow}"; do
   rg -q 'TF_VAR_cluster_endpoint_public_access_cidrs:' "${workflow}"
   rg -q 'TF_VAR_cluster_permissions_boundary_arn:' "${workflow}"
