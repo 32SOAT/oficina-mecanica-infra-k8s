@@ -158,3 +158,28 @@ Environment. O workflow valida a branch, registra a versão S3 anterior, usa a
 role destroy e aplica um saved destroy plan. Produção continua indisponível
 enquanto `ALLOW_PRODUCTION_DESTROY` não for exatamente `true` no ambiente
 `producao`; o valor recomendado e padrão operacional é `false` ou ausente.
+## API Gateway e contratos dinamicos
+
+O API Gateway HTTP e gerenciado exclusivamente pelo state do ambiente em
+`environments/homologacao` ou `environments/producao`. Antes do primeiro plan
+desse state, o `lambda-auth` deve ter publicado
+`/oficina/<ambiente>/platform/auth-lambda-arn` e o deploy Kubernetes deve ter
+publicado `/oficina/<ambiente>/platform/api-nlb-hostname`.
+
+O hostname do NLB e dinamico: `scripts/kubernetes-deploy.sh` o obtem do
+Service `LoadBalancer` e atualiza o parametro SSM com `PutParameter`.
+Aguarde a consistencia eventual do SSM antes de executar o plan do Gateway.
+
+Procedimento seguro para homologacao:
+
+1. Aplique o Terraform do `lambda-auth` com `environment=homologacao`.
+2. Confirme apenas a existencia dos dois contratos SSM, sem imprimir valores.
+3. Execute o deploy Kubernetes de homologacao e aguarde o health direto do NLB.
+4. Execute `bash scripts/terraform-init.sh homologacao`.
+5. Gere o saved plan com `bash scripts/terraform-plan.sh homologacao <arquivo>`.
+6. Revise `bash scripts/terraform-plan-policy.sh homologacao <arquivo>`.
+7. Somente após revisão humana, aplique exatamente o saved plan no ambiente protegido.
+8. Valide `api_gateway_endpoint`, `POST /auth/cpf` e `/api/v1/health`.
+
+Não aplique produção a partir deste procedimento. Não execute apply ou destroy
+durante desenvolvimento.

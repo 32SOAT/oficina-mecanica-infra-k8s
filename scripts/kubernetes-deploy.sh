@@ -109,6 +109,14 @@ kubectl -n "${namespace}" rollout status \
 service_host="$(kubectl -n "${namespace}" get service "${api_name}" \
   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
 [[ -n "${service_host}" ]] || die 'Service ainda não possui hostname do Load Balancer.'
+aws ssm put-parameter \
+  --region "${AWS_REGION}" \
+  --name "/oficina/${environment}/platform/api-nlb-hostname" \
+  --type String \
+  --value "${service_host}" \
+  --overwrite \
+  --query 'Parameter.Name' \
+  --output text >/dev/null || die 'Não foi possível publicar o hostname do NLB no contrato SSM.'
 for _ in $(seq 1 30); do
   if curl --fail --silent --show-error "http://${service_host}/api/v1/health" >/dev/null; then
     printf 'Kubernetes deploy %s concluído: %s@%s\n' "${environment}" "${repository_name}" "${image_digest}"

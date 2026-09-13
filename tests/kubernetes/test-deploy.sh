@@ -52,6 +52,7 @@ grep -n 'kubectl apply -f' "${FAKE_LOG}"
 grep -n 'kubectl apply -k' "${FAKE_LOG}"
 grep -n ' rollout status ' "${FAKE_LOG}"
 grep -n 'curl --fail' "${FAKE_LOG}"
+grep -Fq 'ssm put-parameter --region us-east-1 --name /oficina/homologacao/platform/api-nlb-hostname --type String --value api.example.test --overwrite' "${FAKE_LOG}"
 apply_workload_line="$(grep -n 'kubectl apply -k' "${FAKE_LOG}" | cut -d: -f1)"
 rollout_line="$(grep -n ' rollout status ' "${FAKE_LOG}" | cut -d: -f1)"
 (( apply_workload_line < rollout_line ))
