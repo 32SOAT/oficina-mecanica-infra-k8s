@@ -118,7 +118,7 @@ rg -q 'scripts/terraform-drift.sh' "${drift_workflow}"
 # the apply environment and its credentials must be the read-only plan role.
 ruby - "${drift_workflow}" <<'RUBY'
 require "yaml"
-workflow = YAML.safe_load_file(ARGV.fetch(0), aliases: true)
+workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true)
 job = workflow.fetch("jobs").fetch("drift")
 abort "Drift must execute only from main" unless job.fetch("if", "") == "github.ref == 'refs/heads/main'"
 abort "Drift must use its separate Environment" unless job.fetch("environment") == '${{ matrix.environment }}'

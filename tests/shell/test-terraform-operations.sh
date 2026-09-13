@@ -70,6 +70,8 @@ chmod +x "${test_bin}/terraform"
 
 PATH="${test_bin}:${PATH}"
 export PATH
+# The cases below exercise local wrappers; GitHub Actions exports CI=true.
+unset CI
 FAKE_TERRAFORM_ARGUMENTS="${terraform_arguments}"
 TF_BACKEND_BUCKET='oficina-terraform-state'
 TF_BACKEND_REGION='us-east-1'
