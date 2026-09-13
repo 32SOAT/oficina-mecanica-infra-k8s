@@ -163,6 +163,15 @@ jobs:
         with:
           terraform_version: 1.16.1
 
+      - name: Diagnose OIDC context
+        run: |
+          set -Eeuo pipefail
+          echo "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}"
+          echo "GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME}"
+          echo "GITHUB_REF=${GITHUB_REF}"
+          echo "GITHUB_BASE_REF=${GITHUB_BASE_REF}"
+          echo "GITHUB_HEAD_REF=${GITHUB_HEAD_REF}"
+
       - name: Configure read-only AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
         with:
