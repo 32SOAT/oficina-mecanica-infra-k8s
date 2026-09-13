@@ -159,7 +159,10 @@ rg -q 'pull_request:' "${kubernetes_ci_workflow}"
 rg -q 'kubernetes-validate.sh' "${kubernetes_ci_workflow}"
 rg -q 'kubernetes-promotion-policy.sh' "${kubernetes_ci_workflow}"
 grep -Fq 'kubernetes_paths=()' "${kubernetes_ci_workflow}"
+# These patterns must remain literal because they inspect workflow source.
+# shellcheck disable=SC2016
 grep -Fq 'kubernetes_paths+=("${changed_path}")' "${kubernetes_ci_workflow}"
+# shellcheck disable=SC2016
 grep -Fq '"${kubernetes_paths[@]}"' "${kubernetes_ci_workflow}"
 rg -q 'workflow_dispatch:' "${kubernetes_deploy_workflow}"
 rg -q 'KUBERNETES_HOMOLOGACAO_DEPLOY_ENABLED' "${kubernetes_deploy_workflow}"
