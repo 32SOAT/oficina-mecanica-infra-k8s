@@ -56,6 +56,19 @@ autenticação é publicado pelo repositório `oficina-mecanica-lambda-auth` em
 `/oficina/<ambiente>/platform/auth-lambda-arn` e consumido pelo API Gateway
 deste repositório.
 
+## Integração entre repositórios
+
+O fluxo completo e a tabela producer/consumer estão em
+[Integração com lambda-auth e API](docs/runbooks/cross-repository-integration.md).
+Em uma instalação nova, a ordem é: bootstrap administrativo; root `shared`;
+roots de ambiente; banco e API Nest; Lambda de autenticação; deploy Kubernetes
+que publica o hostname do NLB; e, por último, o API Gateway depois que os dois
+contratos SSM existirem.
+
+O endpoint público usa a URL padrão do HTTP API:
+`https://<api-id>.execute-api.<region>.amazonaws.com`. Domínio customizado, ACM,
+Route 53, WAF, VPC Link e CloudWatch Logs estão fora deste escopo.
+
 ## Entrega
 
 Pull Requests para `homolog` e `main` executam verificações estáticas e, em PRs
@@ -78,6 +91,10 @@ Kubernetes referenciam o digest versionado nos manifests, sem `latest`.
   apply, drift, locks, outputs permitidos e destroy protegido.
 - [Recuperação do state](docs/runbooks/state-recovery.md): contenção, seleção e
   restauração de versão S3, force-unlock e validação sem expor o state.
+- [Integração entre repositórios](docs/runbooks/cross-repository-integration.md):
+  provisionamento, contratos SSM, ordem de atualização e troubleshooting.
+- [Promoção da imagem](docs/runbooks/plano-promocao-imagem.md): publicação da
+  imagem pela API e deploy Kubernetes por digest imutável.
 
 Use `bash scripts/terraform-check.sh` para validar formatação, os onze roots com
 testes (dois bootstraps, seis módulos e três ambientes), regressões shell e

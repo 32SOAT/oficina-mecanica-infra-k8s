@@ -1,9 +1,14 @@
-# Plano de implementação: publicação da imagem e deploy por digest
+# Publicação da imagem e deploy por digest
 
 **Projeto:** Oficina Mecânica  
 **Repositórios:** `oficina-mecanica-api` e `oficina-mecanica-infra-k8s`
 
 ## Objetivo
+
+Este documento é o procedimento operacional do fluxo implementado: a API
+publica a imagem, o infra-k8s versiona o digest e o workflow Kubernetes executa
+migration, rollout e health check. As fases abaixo também servem como checklist
+de revisão quando o fluxo for alterado.
 
 Separar a publicação da imagem Docker do deploy no EKS:
 

@@ -158,7 +158,7 @@ Environment. O workflow valida a branch, registra a versão S3 anterior, usa a
 role destroy e aplica um saved destroy plan. Produção continua indisponível
 enquanto `ALLOW_PRODUCTION_DESTROY` não for exatamente `true` no ambiente
 `producao`; o valor recomendado e padrão operacional é `false` ou ausente.
-## API Gateway e contratos dinamicos
+## API Gateway e contratos dinâmicos
 
 O API Gateway HTTP e gerenciado exclusivamente pelo state do ambiente em
 `environments/homologacao` ou `environments/producao`. Antes do primeiro plan
@@ -181,5 +181,6 @@ Procedimento seguro para homologacao:
 7. Somente após revisão humana, aplique exatamente o saved plan no ambiente protegido.
 8. Valide `api_gateway_endpoint`, `POST /auth/cpf` e `/api/v1/health`.
 
-Não aplique produção a partir deste procedimento. Não execute apply ou destroy
-durante desenvolvimento.
+Não aplique produção a partir deste procedimento. O fluxo completo está em
+[cross-repository-integration.md](cross-repository-integration.md). Não execute
+apply ou destroy durante desenvolvimento.
