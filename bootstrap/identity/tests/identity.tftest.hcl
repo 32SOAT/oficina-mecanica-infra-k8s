@@ -136,7 +136,7 @@ run "plan_can_only_read_state_and_write_its_locks" {
     condition = (
       aws_iam_role_policy.plan.role == aws_iam_role.plan.id &&
       alltrue(flatten([for statement in jsondecode(aws_iam_role_policy.plan.policy).Statement : [for action in statement.Action :
-        can(regex("^[a-z0-9]+:(Get|List|Describe)", action)) ||
+        can(regex("^[a-z0-9]+:(get|list|describe)", lower(action))) ||
         contains(["kms:Decrypt", "kms:GenerateDataKey", "s3:PutObject", "s3:DeleteObject"], action)
       ]])) &&
       alltrue([for statement in jsondecode(aws_iam_role_policy.plan.policy).Statement :
@@ -619,6 +619,7 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
           "eks:DescribeCluster",
           "ssm:GetParameter",
           "ssm:GetParameters",
+          "ssm:PutParameter",
         ]) &&
         length([for statement in jsondecode(boundary.policy).Statement : statement if
           statement.Action == ["eks:DescribeCluster"] &&
@@ -640,6 +641,10 @@ run "role_specific_permissions_boundaries_are_compatible_and_protected" {
           ] : "arn:aws:ssm:us-east-1:123456789012:parameter/oficina/${stack}/platform/${name}"],
           ["arn:aws:ssm:us-east-1:123456789012:parameter/oficina/shared/ecr/repository-url"]
         ))
+        && length([for statement in jsondecode(boundary.policy).Statement : statement if
+          statement.Action == ["ssm:PutParameter"] &&
+          statement.Resource == ["arn:aws:ssm:us-east-1:123456789012:parameter/oficina/${stack}/platform/api-nlb-hostname"]
+        ]) == 1
       ])
     )
     error_message = "Publisher and deployer boundaries must expose only their exact ECR, EKS and SSM runtime contracts."
@@ -767,6 +772,36 @@ run "outputs_reference_the_managed_identities" {
       output.permissions_boundary_arns.producao.api_deployer == aws_iam_policy.api_deployer_boundary["producao"].arn
     )
     error_message = "The bootstrap outputs must expose the managed identities and unambiguous role-specific boundary ARNs."
+  }
+}
+
+run "api_gateway_and_lambda_permissions_are_environment_scoped" {
+  command = plan
+
+  assert {
+    condition = alltrue([for stack in ["homologacao", "producao"] :
+      length([for statement in jsondecode(aws_iam_role_policy.apply[stack].policy).Statement : statement if
+        contains(statement.Action, "apigateway:POST") &&
+        contains(statement.Action, "apigateway:PATCH") &&
+        contains(statement.Action, "apigateway:DELETE") &&
+        statement.Resource == [
+          "arn:aws:apigateway:us-east-1::/apis",
+          "arn:aws:apigateway:us-east-1::/apis/*",
+        ]
+      ]) == 1
+    ])
+    error_message = "Environment apply roles must manage only API Gateway resources in the configured region."
+  }
+
+  assert {
+    condition = alltrue([for stack in ["homologacao", "producao"] :
+      length([for statement in jsondecode(aws_iam_role_policy.apply[stack].policy).Statement : statement if
+        contains(statement.Action, "lambda:AddPermission") &&
+        contains(statement.Action, "lambda:RemovePermission") &&
+        statement.Resource == ["arn:aws:lambda:us-east-1:123456789012:function/oficina-mecanica-auth-cpf-${stack}"]
+      ]) == 1
+    ])
+    error_message = "Environment apply roles must manage Lambda permission only for the matching auth function."
   }
 }
 

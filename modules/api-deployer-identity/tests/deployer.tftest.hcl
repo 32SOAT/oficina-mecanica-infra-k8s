@@ -44,6 +44,13 @@ run "deployer_is_limited_to_environment_metadata_and_namespace" {
   }
 
   assert {
+    condition = length([for statement in jsondecode(aws_iam_role_policy.deployer.policy).Statement : statement if
+      statement.Action == ["ssm:PutParameter"] && statement.Resource == ["arn:aws:ssm:us-east-1:123456789012:parameter/oficina/homologacao/platform/api-nlb-hostname"]
+    ]) == 1
+    error_message = "Deployer may publish only its own environment NLB hostname contract."
+  }
+
+  assert {
     condition = (
       length([for statement in jsondecode(aws_iam_role_policy.deployer.policy).Statement : statement if
         statement.Action == ["eks:DescribeCluster"] && statement.Resource == [var.cluster_arn]

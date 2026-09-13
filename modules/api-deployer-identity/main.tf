@@ -18,6 +18,7 @@ locals {
     ],
     ["arn:aws:ssm:${local.aws_region}:${local.aws_account_id}:parameter/oficina/shared/ecr/repository-url"]
   )
+  nlb_hostname_parameter_arn = "arn:aws:ssm:${local.aws_region}:${local.aws_account_id}:parameter/oficina/${var.environment}/platform/api-nlb-hostname"
   tags = merge(var.tags, {
     Project     = var.project_name
     Environment = var.environment
@@ -65,6 +66,12 @@ resource "aws_iam_role_policy" "deployer" {
         Effect   = "Allow"
         Action   = ["ssm:GetParameter", "ssm:GetParameters"]
         Resource = local.parameter_arns
+      },
+      {
+        Sid      = "PublishNlbHostnameContract"
+        Effect   = "Allow"
+        Action   = ["ssm:PutParameter"]
+        Resource = [local.nlb_hostname_parameter_arn]
       },
       {
         Sid      = "ValidateImageDigest"

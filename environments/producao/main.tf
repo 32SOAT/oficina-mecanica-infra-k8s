@@ -4,6 +4,16 @@ data "aws_ecr_repository" "api" {
   name = "oficina-mecanica-api"
 }
 
+data "aws_ssm_parameter" "auth_lambda_arn" {
+  name            = "/oficina/producao/platform/auth-lambda-arn"
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "api_nlb_hostname" {
+  name            = "/oficina/producao/platform/api-nlb-hostname"
+  with_decryption = false
+}
+
 locals {
   environment  = "producao"
   project_name = "oficina-mecanica"
@@ -75,4 +85,15 @@ module "platform_contract" {
   database_client_security_group_id = module.eks.database_client_security_group_id
   eks_cluster_name                  = module.eks.cluster_name
   tags                              = var.tags
+}
+
+module "api_gateway_http" {
+  source = "../../modules/api-gateway-http"
+
+  environment  = local.environment
+  api_name     = "${local.project_name}-${local.environment}-http"
+  lambda_arn   = data.aws_ssm_parameter.auth_lambda_arn.value
+  nlb_hostname = data.aws_ssm_parameter.api_nlb_hostname.value
+  aws_region   = var.aws_region
+  tags         = var.tags
 }

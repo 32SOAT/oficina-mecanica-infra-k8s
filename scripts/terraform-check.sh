@@ -16,7 +16,7 @@ terraform fmt -check -recursive
 # and reusable modules. All providers are pinned; no AWS/backend is used.
 test_roots=(
   bootstrap/backend bootstrap/identity
-  modules/network modules/eks modules/ecr modules/platform-contract
+  modules/network modules/eks modules/ecr modules/platform-contract modules/api-gateway-http
   modules/api-publisher-identity modules/api-deployer-identity
   environments/shared environments/homologacao environments/producao
 )

@@ -31,6 +31,8 @@ locals {
   }
   cluster_arns          = { for stack in local.stacks : stack => "arn:aws:eks:${local.regional_arn}:cluster/${var.project_name}-${stack}" }
   ecr_arn               = "arn:aws:ecr:${local.regional_arn}:repository/${var.project_name}-api"
+  api_gateway_arns      = ["arn:aws:apigateway:${var.aws_region}::/apis", "arn:aws:apigateway:${var.aws_region}::/apis/*"]
+  lambda_auth_arns      = { for stack in local.environments : stack => "arn:aws:lambda:${local.regional_arn}:function/${var.project_name}-auth-cpf-${stack}" }
   ecr_url_parameter_arn = "arn:aws:ssm:${local.regional_arn}:parameter/oficina/shared/ecr/repository-url"
   platform_parameter_arns = { for stack in local.environments : stack => concat(
     [for name in [
@@ -44,6 +46,7 @@ locals {
     ] : "arn:aws:ssm:${local.regional_arn}:parameter/oficina/${stack}/platform/${name}"],
     [local.ecr_url_parameter_arn]
   ) }
+  nlb_hostname_parameter_arns = { for stack in local.environments : stack => "arn:aws:ssm:${local.regional_arn}:parameter/oficina/${stack}/platform/api-nlb-hostname" }
   eks_arns = { for stack in local.environments : stack => [
     local.cluster_arns[stack],
     "arn:aws:eks:${local.regional_arn}:nodegroup/${var.project_name}-${stack}/*",
@@ -151,6 +154,18 @@ locals {
       Effect   = "Allow"
       Action   = ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions"]
       Resource = local.eks_managed_policies
+    },
+    {
+      Sid      = "ReadApiGateway${stack}"
+      Effect   = "Allow"
+      Action   = ["apigateway:GET"]
+      Resource = local.api_gateway_arns
+    },
+    {
+      Sid      = "ReadAuthLambda${stack}"
+      Effect   = "Allow"
+      Action   = ["lambda:GetFunction", "lambda:GetPolicy"]
+      Resource = [local.lambda_auth_arns[stack]]
     },
   ] }
   oidc_read = [{
@@ -322,6 +337,18 @@ locals {
       Action   = ["logs:DeleteLogGroup", "logs:DeleteRetentionPolicy"]
       Resource = ["arn:aws:logs:${local.regional_arn}:log-group:/aws/eks/${var.project_name}-${stack}/cluster:*"]
     },
+    {
+      Sid      = "RemoveApiGateway"
+      Effect   = "Allow"
+      Action   = ["apigateway:DELETE"]
+      Resource = local.api_gateway_arns
+    },
+    {
+      Sid      = "RemoveAuthLambdaPermission"
+      Effect   = "Allow"
+      Action   = ["lambda:RemovePermission"]
+      Resource = [local.lambda_auth_arns[stack]]
+    },
   ] }
   environment_apply = { for stack in local.environments : stack => [
     {
@@ -384,6 +411,18 @@ locals {
       Effect   = "Allow"
       Action   = ["logs:CreateLogGroup", "logs:PutRetentionPolicy", "logs:TagLogGroup", "logs:UntagLogGroup", "logs:TagResource", "logs:UntagResource"]
       Resource = ["arn:aws:logs:${local.regional_arn}:log-group:/aws/eks/${var.project_name}-${stack}/cluster", "arn:aws:logs:${local.regional_arn}:log-group:/aws/eks/${var.project_name}-${stack}/cluster:*"]
+    },
+    {
+      Sid      = "ManageApiGateway"
+      Effect   = "Allow"
+      Action   = ["apigateway:POST", "apigateway:PATCH", "apigateway:DELETE"]
+      Resource = local.api_gateway_arns
+    },
+    {
+      Sid      = "ManageAuthLambdaPermission"
+      Effect   = "Allow"
+      Action   = ["lambda:AddPermission", "lambda:RemovePermission"]
+      Resource = [local.lambda_auth_arns[stack]]
     },
     {
       Sid       = "PassEKSServiceRoles"
@@ -512,6 +551,12 @@ resource "aws_iam_policy" "api_deployer_boundary" {
         Effect   = "Allow"
         Action   = ["ssm:GetParameter", "ssm:GetParameters"]
         Resource = local.platform_parameter_arns[each.key]
+      },
+      {
+        Sid      = "PublishNlbHostnameContract"
+        Effect   = "Allow"
+        Action   = ["ssm:PutParameter"]
+        Resource = [local.nlb_hostname_parameter_arns[each.key]]
       },
       {
         Sid      = "ValidateProjectImage"

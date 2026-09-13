@@ -20,6 +20,36 @@ mock_provider "aws" {
   mock_data "aws_subnet" {
     defaults = { vpc_id = "vpc-mocked" }
   }
+
+  mock_data "aws_ssm_parameter" {
+    defaults = { value = "contract-value" }
+  }
+}
+
+override_resource {
+  target          = module.api_gateway_http.aws_apigatewayv2_api.this
+  override_during = plan
+  values = {
+    id            = "api-producao"
+    api_endpoint  = "https://api-producao.execute-api.us-east-1.amazonaws.com"
+    execution_arn = "arn:aws:apigateway:us-east-1::/apis/api-producao"
+  }
+}
+
+override_data {
+  target = data.aws_ssm_parameter.auth_lambda_arn
+  values = {
+    name  = "/oficina/producao/platform/auth-lambda-arn"
+    value = "arn:aws:lambda:us-east-1:123456789012:function:oficina-mecanica-auth-cpf-producao"
+  }
+}
+
+override_data {
+  target = data.aws_ssm_parameter.api_nlb_hostname
+  values = {
+    name  = "/oficina/producao/platform/api-nlb-hostname"
+    value = "api-producao.elb.us-east-1.amazonaws.com"
+  }
 }
 
 override_resource {
@@ -91,6 +121,14 @@ run "producao_root_exposes_safe_wrapper_contract" {
   assert {
     condition     = module.eks.cluster_name == "oficina-mecanica-producao"
     error_message = "The root must compose network outputs into the deterministic EKS module."
+  }
+
+  assert {
+    condition = (
+      data.aws_ssm_parameter.auth_lambda_arn.name == "/oficina/producao/platform/auth-lambda-arn" &&
+      data.aws_ssm_parameter.api_nlb_hostname.name == "/oficina/producao/platform/api-nlb-hostname"
+    )
+    error_message = "Producao must consume only its own Lambda and NLB SSM contracts and expose the Gateway."
   }
 }
 

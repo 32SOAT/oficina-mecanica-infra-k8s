@@ -47,10 +47,14 @@ Os módulos publicam somente parâmetros `String` não sensíveis:
 - `/oficina/<ambiente>/platform/private-subnet-ids`;
 - `/oficina/<ambiente>/platform/database-subnet-ids`;
 - `/oficina/<ambiente>/platform/database-client-security-group-id`;
-- `/oficina/<ambiente>/platform/eks-cluster-name`.
+- `/oficina/<ambiente>/platform/eks-cluster-name`;
+- `/oficina/<ambiente>/platform/api-nlb-hostname` (publicado pelo deploy Kubernetes após o Service receber hostname).
 
 `<ambiente>` é `homologacao` ou `producao`. Senhas, tokens e connection strings
-não pertencem a esse contrato nem ao state desta plataforma.
+não pertencem a esse contrato nem ao state desta plataforma. O ARN da Lambda de
+autenticação é publicado pelo repositório `oficina-mecanica-lambda-auth` em
+`/oficina/<ambiente>/platform/auth-lambda-arn` e consumido pelo API Gateway
+deste repositório.
 
 ## Entrega
 

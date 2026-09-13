@@ -47,3 +47,23 @@ output "ecr_repository_url" {
   description = "URL do ECR compartilhado consultado por nome deterministico."
   value       = data.aws_ecr_repository.api.repository_url
 }
+
+output "api_gateway_id" {
+  description = "ID do API Gateway HTTP de producao."
+  value       = module.api_gateway_http.api_id
+}
+
+output "api_gateway_endpoint" {
+  description = "Endpoint padrao execute-api de producao."
+  value       = module.api_gateway_http.api_endpoint
+}
+
+output "api_gateway_lambda_integration_id" {
+  description = "ID da integracao da rota de autenticacao."
+  value       = module.api_gateway_http.lambda_integration_id
+}
+
+output "api_gateway_nlb_integration_id" {
+  description = "ID da integracao proxy com o NLB."
+  value       = module.api_gateway_http.nlb_integration_id
+}

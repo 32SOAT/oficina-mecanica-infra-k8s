@@ -22,7 +22,7 @@ chmod +x "${test_dir}/bin/terraform" "${test_dir}/bin/shellcheck"
 
 roots=(
   bootstrap/backend bootstrap/identity
-  modules/network modules/eks modules/ecr modules/platform-contract
+  modules/network modules/eks modules/ecr modules/platform-contract modules/api-gateway-http
   modules/api-publisher-identity modules/api-deployer-identity
   environments/shared environments/homologacao environments/producao
 )
