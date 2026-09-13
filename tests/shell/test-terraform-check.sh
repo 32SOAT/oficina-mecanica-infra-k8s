@@ -14,6 +14,12 @@ printf '#!/usr/bin/env bash\nexit 0\n' >"${test_dir}/tests/shell/test-nested.sh"
 cat >"${test_dir}/bin/terraform" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+if [[ "${1:-}" == -chdir=* ]]; then
+  [[ -n "${TF_DATA_DIR:-}" ]] || {
+    printf 'TF_DATA_DIR ausente para root Terraform.\n' >&2
+    exit 1
+  }
+fi
 printf '%s\t' "$@" >>"${CHECK_CALL_LOG:?}"
 printf '\n' >>"${CHECK_CALL_LOG}"
 EOF

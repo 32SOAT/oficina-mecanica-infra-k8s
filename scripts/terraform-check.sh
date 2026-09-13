@@ -12,6 +12,8 @@ require_command shellcheck
 cd "${repo_root}"
 
 terraform fmt -check -recursive
+terraform_data_root="$(mktemp -d "${TMPDIR:-/tmp}/oficina-terraform-check.XXXXXX")"
+trap 'rm -rf -- "${terraform_data_root}"' EXIT
 # Every root with native Terraform tests, including administrative bootstraps
 # and reusable modules. All providers are pinned; no AWS/backend is used.
 test_roots=(
@@ -21,9 +23,11 @@ test_roots=(
   environments/shared environments/homologacao environments/producao
 )
 for root in "${test_roots[@]}"; do
-  terraform -chdir="${repo_root}/${root}" init -backend=false -input=false -lockfile=readonly
-  terraform -chdir="${repo_root}/${root}" validate
-  terraform -chdir="${repo_root}/${root}" test
+  root_data_dir="${terraform_data_root}/${root//\//-}"
+  mkdir -p "${root_data_dir}"
+  TF_DATA_DIR="${root_data_dir}" terraform -chdir="${repo_root}/${root}" init -backend=false -input=false -lockfile=readonly
+  TF_DATA_DIR="${root_data_dir}" terraform -chdir="${repo_root}/${root}" validate
+  TF_DATA_DIR="${root_data_dir}" terraform -chdir="${repo_root}/${root}" test
 done
 
 for test_script in tests/shell/test-*.sh; do
