@@ -23,6 +23,8 @@ set -Eeuo pipefail
 printf 'kubectl %s\n' "$*" >>"${FAKE_LOG}"
 if [[ "$*" == *' create '* || "$*" == create\ * ]]; then
   printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap'
+elif [[ "$*" == *' apply -f -'* ]]; then
+  cat >/dev/null
 elif [[ "$*" == *' get service '* ]]; then
   printf '%s\n' 'api.example.test'
 elif [[ "$*" == *' wait '* && "${FAKE_MIGRATION_FAIL:-0}" == 1 ]]; then
