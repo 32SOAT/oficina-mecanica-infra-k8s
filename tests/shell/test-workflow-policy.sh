@@ -82,6 +82,7 @@ ci_workflow="${workflow_dir}/terraform-ci.yml"
 deploy_workflow="${workflow_dir}/terraform-deploy.yml"
 drift_workflow="${workflow_dir}/terraform-drift.yml"
 destroy_workflow="${workflow_dir}/terraform-destroy.yml"
+kubernetes_ci_workflow="${workflow_dir}/kubernetes-ci.yml"
 
 rg -q 'name:[[:space:]]+terraform / gate' "${ci_workflow}"
 rg -q 'pull_request:' "${ci_workflow}"
@@ -98,6 +99,14 @@ rg -q "needs\.static-check\.outputs\.terraform_changed == 'true'" "${ci_workflow
 rg -q 'PLAN_REQUIRED:' "${ci_workflow}"
 rg -q 'SHARED_PLAN_REQUIRED:' "${ci_workflow}"
 rg -q 'Configuração obrigatória ausente' "${ci_workflow}"
+rg -q 'BASE_REF: \$\{\{ github.base_ref \}\}' "${kubernetes_ci_workflow}"
+rg -q 'HEAD_REF: \$\{\{ github.head_ref \}\}' "${kubernetes_ci_workflow}"
+rg -q '"\$\{BASE_REF\}" "\$\{HEAD_REF\}"' "${kubernetes_ci_workflow}"
+direct_ref_usage="$(rg -n '\$\{\{ github\.(base_ref|head_ref) \}\}' "${kubernetes_ci_workflow}" | rg -v '^[0-9]+:[[:space:]]+(BASE_REF|HEAD_REF):' || true)"
+if [[ -n "${direct_ref_usage}" ]]; then
+  printf 'Ref GitHub usada diretamente em script.\n' >&2
+  exit 1
+fi
 
 if rg -n "&&[[:space:]]*'?(producao|main)'?[[:space:]]*\|\|[[:space:]]*'?(homologacao|homolog)'?" "${workflow_dir}"; then
   printf 'Seleção ambígua com &&/|| encontrada.\n' >&2

@@ -70,11 +70,14 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Validate branch and environment
+        env:
+          DISPATCH_ENV: ${{ inputs.environment }}
         run: |
           set -Eeuo pipefail
           if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
-            case "${{ inputs.environment }}:${GITHUB_REF}" in
-              homologacao:refs/heads/homolog|producao:refs/heads/main) ;;
+            case "${DISPATCH_ENV}:${GITHUB_REF}" in
+              homologacao:refs/heads/homolog) ;;
+              producao:refs/heads/main) ;;
               *) echo 'workflow_dispatch deve usar a branch correspondente ao ambiente.' >&2; exit 1 ;;
             esac
           fi

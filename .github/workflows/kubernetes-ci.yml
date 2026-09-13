@@ -23,6 +23,8 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           set -Eeuo pipefail
           mapfile -t changed_paths < <(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}")
@@ -48,7 +50,7 @@ jobs:
             bash scripts/kubernetes-validate.sh "${environment}"
           done
           bash scripts/kubernetes-promotion-policy.sh \
-            "${{ github.base_ref }}" "${{ github.head_ref }}" "${kubernetes_paths[@]}"
+            "${BASE_REF}" "${HEAD_REF}" "${kubernetes_paths[@]}"
 
   gate:
     name: kubernetes / gate
