@@ -63,7 +63,9 @@ module "api_deployer_identity" {
 
   environment              = local.environment
   github_organization      = "32SOAT"
+  github_organization_id   = "269042072"
   github_repository        = "oficina-mecanica-infra-k8s"
+  github_repository_id     = "1315441444"
   github_oidc_provider_arn = var.github_oidc_provider_arn
   github_environment       = local.environment
   cluster_name             = module.eks.cluster_name

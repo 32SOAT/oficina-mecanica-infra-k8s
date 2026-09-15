@@ -29,6 +29,16 @@ variable "github_organization" {
   }
 }
 
+variable "github_organization_id" {
+  type        = string
+  description = "ID imutável da organização proprietária do repositório."
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_organization_id))
+    error_message = "github_organization_id deve conter somente dígitos."
+  }
+}
+
 variable "github_repository" {
   type        = string
   description = "Repositorio de infraestrutura autorizado a executar deploy."
@@ -36,6 +46,16 @@ variable "github_repository" {
   validation {
     condition     = var.github_repository == "oficina-mecanica-infra-k8s"
     error_message = "github_repository deve ser oficina-mecanica-infra-k8s."
+  }
+}
+
+variable "github_repository_id" {
+  type        = string
+  description = "ID imutável do repositório autorizado a executar deploy."
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_id))
+    error_message = "github_repository_id deve conter somente dígitos."
   }
 }
 

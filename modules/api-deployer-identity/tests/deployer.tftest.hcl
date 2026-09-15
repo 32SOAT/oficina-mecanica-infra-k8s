@@ -16,7 +16,9 @@ variables {
   project_name             = "oficina-mecanica"
   environment              = "homologacao"
   github_organization      = "32SOAT"
+  github_organization_id   = "269042072"
   github_repository        = "oficina-mecanica-infra-k8s"
+  github_repository_id     = "1315441444"
   github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
   github_environment       = "homologacao"
   cluster_name             = "oficina-mecanica-homologacao"
@@ -36,7 +38,7 @@ run "deployer_is_limited_to_environment_metadata_and_namespace" {
       one(jsondecode(aws_iam_role.deployer.assume_role_policy).Statement).Principal == { Federated = var.github_oidc_provider_arn } &&
       one(jsondecode(aws_iam_role.deployer.assume_role_policy).Statement).Condition.StringEquals == {
         "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        "token.actions.githubusercontent.com:sub" = "repo:32SOAT/oficina-mecanica-infra-k8s:environment:homologacao"
+        "token.actions.githubusercontent.com:sub" = "repo:32SOAT@269042072/oficina-mecanica-infra-k8s@1315441444:environment:homologacao"
       } &&
       !strcontains(aws_iam_role.deployer.assume_role_policy, "*")
     )
