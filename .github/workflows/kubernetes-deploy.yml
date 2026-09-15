@@ -1,0 +1,108 @@
+name: Kubernetes Deploy
+
+on:
+  push:
+    branches:
+      - homolog
+      - main
+    paths:
+      - kubernetes/**
+      - scripts/kubernetes-*.sh
+      - .github/workflows/kubernetes-*.yml
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente a reaplicar no commit da branch correspondente
+        required: true
+        type: choice
+        options:
+          - homologacao
+          - producao
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+
+jobs:
+  deploy:
+    name: Deploy Kubernetes
+    if: >-
+      (github.event_name == 'push' &&
+       ((github.ref == 'refs/heads/homolog' && vars.KUBERNETES_HOMOLOGACAO_DEPLOY_ENABLED == 'true') ||
+        (github.ref == 'refs/heads/main' && vars.KUBERNETES_PRODUCAO_DEPLOY_ENABLED == 'true'))) ||
+      (github.event_name == 'workflow_dispatch' &&
+       ((inputs.environment == 'homologacao' && github.ref == 'refs/heads/homolog' && vars.KUBERNETES_HOMOLOGACAO_DEPLOY_ENABLED == 'true') ||
+        (inputs.environment == 'producao' && github.ref == 'refs/heads/main' && vars.KUBERNETES_PRODUCAO_DEPLOY_ENABLED == 'true')))
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'homolog' && 'homologacao' || 'producao') }}
+    concurrency:
+      group: kubernetes-deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      DEPLOY_ROLE_ARN: ${{ vars.DEPLOY_ROLE_ARN }}
+      CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+      ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+      KUBERNETES_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'oficina-mecanica' }}
+      POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+      POSTGRES_PORT: ${{ vars.POSTGRES_PORT || '5432' }}
+      POSTGRES_DB: ${{ vars.POSTGRES_DB || 'oficina_mecanica' }}
+      POSTGRES_USER: ${{ vars.POSTGRES_USER || 'oficina' }}
+      POSTGRES_SYNC: ${{ vars.POSTGRES_SYNC || '0' }}
+      POSTGRES_SSL: ${{ vars.POSTGRES_SSL || '1' }}
+      POSTGRES_SSL_REJECT_UNAUTHORIZED: ${{ vars.POSTGRES_SSL_REJECT_UNAUTHORIZED || '0' }}
+      JWT_EXPIRES_IN: ${{ vars.JWT_EXPIRES_IN || '1h' }}
+      NOTIFICACAO_EMAIL_MECANICOS: ${{ vars.NOTIFICACAO_EMAIL_MECANICOS }}
+      NOTIFICACAO_EMAIL_ADMIN: ${{ vars.NOTIFICACAO_EMAIL_ADMIN }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+    steps:
+      - name: Checkout merged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Validate branch and environment
+        env:
+          DISPATCH_ENV: ${{ inputs.environment }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
+            case "${DISPATCH_ENV}:${GITHUB_REF}" in
+              homologacao:refs/heads/homolog) ;;
+              producao:refs/heads/main) ;;
+              *) echo 'workflow_dispatch deve usar a branch correspondente ao ambiente.' >&2; exit 1 ;;
+            esac
+          fi
+          for variable_name in AWS_ACCOUNT_ID AWS_REGION DEPLOY_ROLE_ARN CLUSTER_NAME ECR_REPOSITORY_URL POSTGRES_HOST NOTIFICACAO_EMAIL_MECANICOS NOTIFICACAO_EMAIL_ADMIN; do
+            [[ -n "${!variable_name:-}" ]] || { echo "Variável ausente: ${variable_name}" >&2; exit 1; }
+          done
+
+      - name: Configure OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Validate assumed role
+        run: |
+          set -Eeuo pipefail
+          role_name="${DEPLOY_ROLE_ARN##*/}"
+          expected_arn="arn:aws:sts::${AWS_ACCOUNT_ID}:assumed-role/${role_name}/gha-${GITHUB_RUN_ID}"
+          actual_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          [[ "${actual_arn}" == "${expected_arn}" ]] || { echo 'Sessão AWS inesperada.' >&2; exit 1; }
+
+      - name: Configure kubeconfig
+        run: aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
+
+      - name: Deploy digest, migrations and workload
+        run: bash scripts/kubernetes-deploy.sh "${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'homolog' && 'homologacao' || 'producao') }}"

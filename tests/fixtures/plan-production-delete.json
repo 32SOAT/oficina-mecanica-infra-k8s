@@ -1,0 +1,15 @@
+{
+  "resource_changes": [
+    {
+      "address": "aws_eks_cluster.this",
+      "mode": "managed",
+      "type": "aws_eks_cluster",
+      "name": "this",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": { "name": "oficina-producao" },
+        "after": { "name": "oficina-producao-replacement" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+.worktrees/
+.terraform/
+*.tfstate*
+*.tfplan
+*.tfvars
+*.tfvars.json
+.env
+crash.*
+!environments/shared/shared.auto.tfvars
+!environments/homologacao/environment.auto.tfvars
+!environments/producao/environment.auto.tfvars

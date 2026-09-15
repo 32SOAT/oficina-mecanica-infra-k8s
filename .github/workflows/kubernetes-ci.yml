@@ -1,0 +1,62 @@
+name: Kubernetes CI
+
+on:
+  pull_request:
+    branches:
+      - homolog
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Kubernetes manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Validate changed manifests
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -Eeuo pipefail
+          mapfile -t changed_paths < <(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}")
+          kubernetes_changed=false
+          kubernetes_paths=()
+          for changed_path in "${changed_paths[@]}"; do
+            if [[ "${changed_path}" == kubernetes/* ]]; then
+              kubernetes_changed=true
+              kubernetes_paths+=("${changed_path}")
+            fi
+          done
+          if [[ "${kubernetes_changed}" != true ]]; then
+            echo 'Nenhum manifest Kubernetes alterado; gate permanece válido.'
+            exit 0
+          fi
+          for environment in homologacao producao; do
+            kubectl kustomize "kubernetes/oficina-api/overlays/${environment}" >/tmp/${environment}.yaml
+            grep -Eq 'image: [^[:space:]]+@sha256:[0-9a-f]{64}' /tmp/${environment}.yaml
+            if grep -Eq 'newTag:|:latest([[:space:]]|$)' /tmp/${environment}.yaml; then
+              echo "Tag mutável encontrada em ${environment}." >&2
+              exit 1
+            fi
+            bash scripts/kubernetes-validate.sh "${environment}"
+          done
+          bash scripts/kubernetes-promotion-policy.sh \
+            "${BASE_REF}" "${HEAD_REF}" "${kubernetes_paths[@]}"
+
+  gate:
+    name: kubernetes / gate
+    if: always()
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce validation result
+        run: test "${{ needs.validate.result }}" = success

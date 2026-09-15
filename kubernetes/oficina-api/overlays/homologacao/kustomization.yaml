@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: oficina-mecanica
+resources:
+  - ../../base
+images:
+  - name: oficina-mecanica-api
+    newName: 426197262724.dkr.ecr.us-east-1.amazonaws.com/oficina-mecanica-api
+    digest: sha256:c2fee4cfa708efe8db9c72e762a99b186a6a310592949dfbe1113a949466572d

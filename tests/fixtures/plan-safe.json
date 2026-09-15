@@ -1,0 +1,15 @@
+{
+  "resource_changes": [
+    {
+      "address": "aws_cloudwatch_log_group.this",
+      "mode": "managed",
+      "type": "aws_cloudwatch_log_group",
+      "name": "this",
+      "change": {
+        "actions": ["update"],
+        "before": { "retention_in_days": 7 },
+        "after": { "retention_in_days": 30 }
+      }
+    }
+  ]
+}
