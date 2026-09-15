@@ -43,7 +43,14 @@ export PATH="${test_dir}/bin:${PATH}"
 export FAKE_LOG="${test_dir}/commands.log"
 export AWS_REGION=us-east-1
 export CLUSTER_NAME=oficina-mecanica-homologacao
-export ECR_REPOSITORY_URL=123456789012.dkr.ecr.us-east-1.amazonaws.com/oficina-mecanica-api
+ecr_repository_url="$(sed -n 's/^    newName: //p' \
+  "${repo_root}/kubernetes/oficina-api/overlays/homologacao/kustomization.yaml" |
+  head -n 1)"
+[[ -n "${ecr_repository_url}" ]] || {
+  printf 'ECR do overlay de homologação não encontrado.\n' >&2
+  exit 1
+}
+export ECR_REPOSITORY_URL="${ecr_repository_url}"
 export POSTGRES_HOST=db.example.test POSTGRES_PORT=5432 POSTGRES_DB=oficina_mecanica POSTGRES_USER=oficina
 export POSTGRES_PASSWORD=not-printed POSTGRES_SYNC=0 POSTGRES_SSL=1 POSTGRES_SSL_REJECT_UNAUTHORIZED=0
 export JWT_SECRET=not-printed JWT_EXPIRES_IN=1h RESEND_API_KEY=not-printed
