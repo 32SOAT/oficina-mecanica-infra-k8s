@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fase2-kubernetes-oficina-mecanica-api
+  labels:
+    app.kubernetes.io/name: fase2-kubernetes-oficina-mecanica-api
+    app.kubernetes.io/instance: oficina-mecanica
+    app.kubernetes.io/part-of: oficina-mecanica
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fase2-kubernetes-oficina-mecanica-api
+      app.kubernetes.io/instance: oficina-mecanica
+      app.kubernetes.io/part-of: oficina-mecanica
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fase2-kubernetes-oficina-mecanica-api
+        app.kubernetes.io/instance: oficina-mecanica
+        app.kubernetes.io/part-of: oficina-mecanica
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: oficina-mecanica-api
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: fase2-kubernetes-oficina-mecanica-api-config
+            - secretRef:
+                name: fase2-kubernetes-oficina-mecanica-api-secret
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 18
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}
