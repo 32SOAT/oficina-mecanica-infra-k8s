@@ -5,5 +5,5 @@ resources:
   - ../../base
 images:
   - name: oficina-mecanica-api
-    newName: 123456789012.dkr.ecr.us-east-1.amazonaws.com/oficina-mecanica-api
-    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    newName: 426197262724.dkr.ecr.us-east-1.amazonaws.com/oficina-mecanica-api
+    digest: sha256:c2fee4cfa708efe8db9c72e762a99b186a6a310592949dfbe1113a949466572d
