@@ -1,0 +1,52 @@
+# Official datadog/datadog Helm chart. Override clusterName at installation.
+datadog:
+  clusterName: oficina-mecanica-dev
+  site: datadoghq.com
+  apiKeyExistingSecret: datadog-api-key
+  operator:
+    enabled: false
+  kubeStateMetricsEnabled: false
+  kubeStateMetricsCore:
+    enabled: true
+    ignoreLegacyKSMCheck: true
+    collectSecretMetrics: false
+  logs:
+    enabled: true
+    containerCollectAll: true
+  apm:
+    portEnabled: true
+    socketEnabled: false
+  # CPU/memory and state metrics do not require live processes or manifests.
+  processAgent:
+    processCollection: false
+    processDiscovery: false
+    containerCollection: false
+  orchestratorExplorer:
+    enabled: false
+
+agents:
+  enabled: true
+  containers:
+    agent:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+clusterAgent:
+  enabled: true
+  replicas: 1
+  admissionController:
+    enabled: false
+  metricsProvider:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
