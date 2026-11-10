@@ -1,0 +1,12 @@
+{
+  "name": "Falhas 5xx - {{service.name}} ({{env.name}})",
+  "type": "query alert",
+  "query": "sum(last_5m):sum:trace.express.request.errors{*} by {service,env}.as_count() > 5",
+  "message": "{{service.name}} respondeu {{value}} erros 5xx em 5 minutos no ambiente {{env.name}} (limite: {{threshold}}).\n\nNo os-service, um 502 indica falha na chamada ao billing ou à execução, ou seja, uma etapa da saga que não completou.\n\nPrimeiro passo: abrir APM > Traces com service:{{service.name}} status:error e seguir o trace até o serviço que falhou.",
+  "tags": ["team:32soat", "project:oficina-mecanica"],
+  "options": {
+    "thresholds": { "critical": 5 },
+    "notify_no_data": false,
+    "include_tags": true
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "title": "Oficina Mecânica - Observabilidade",
+  "description": "Ordens de serviço e saúde dos microsserviços (OS, billing e execução). Escolha o ambiente em $env.",
+  "layout_type": "ordered",
+  "reflow_type": "auto",
+  "template_variables": [
+    { "name": "env", "prefix": "env", "available_values": [], "defaults": ["local"] }
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "title": "Volume de OS por dia",
+        "type": "timeseries",
+        "show_legend": false,
+        "time": { "live_span": "1w" },
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "sum:oficina.ordem_servico.criada{$env,status_inicial:recebida}.as_count().rollup(sum, 86400)"
+              }
+            ],
+            "formulas": [{ "formula": "q", "alias": "OS criadas" }],
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Tempo médio por fase (segundos, últimas 24 h)",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "avg:oficina.ordem_servico.tempo_medio_fase{$env,janela:24h} by {fase}"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "line"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Latência p95 por serviço",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "p95:trace.express.request{$env} by {service}"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "line"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Requisições por serviço",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "sum:trace.express.request.hits{$env} by {service}.as_count()"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Erros 5xx por serviço",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "sum:trace.express.request.errors{$env} by {service}.as_count()"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Falhas no envio de e-mail (Resend)",
+        "type": "timeseries",
+        "show_legend": false,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "q",
+                "indexes": ["*"],
+                "compute": { "aggregation": "count" },
+                "group_by": [],
+                "search": {
+                  "query": "$env service:oficina-mecanica-os-service @context:NotificarListener \"Falha ao enviar e-mail\""
+                }
+              }
+            ],
+            "formulas": [{ "formula": "q", "alias": "Falhas" }],
+            "display_type": "bars"
+          }
+        ]
+      }
+    }
+  ]
+}

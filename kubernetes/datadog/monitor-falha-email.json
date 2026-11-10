@@ -1,0 +1,12 @@
+{
+  "name": "Falha no envio de e-mail (Resend) - {{env.name}}",
+  "type": "log alert",
+  "query": "logs(\"service:oficina-mecanica-os-service @context:NotificarListener \\\"Falha ao enviar e-mail\\\"\").index(\"*\").rollup(\"count\").by(\"env\").last(\"15m\") > 3",
+  "message": "O os-service falhou {{value}} vezes ao enviar e-mail em 15 minutos no ambiente {{env.name}} (limite: {{threshold}}).\n\nPrimeiro passo: conferir o status do Resend e a validade da RESEND_API_KEY do ambiente. E-mails perdidos não são reenviados.",
+  "tags": ["team:32soat", "project:oficina-mecanica", "service:oficina-mecanica-os-service"],
+  "options": {
+    "thresholds": { "critical": 3 },
+    "notify_no_data": false,
+    "include_tags": true
+  }
+}
