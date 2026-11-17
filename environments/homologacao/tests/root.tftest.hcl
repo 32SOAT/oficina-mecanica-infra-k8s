@@ -45,10 +45,18 @@ override_data {
 }
 
 override_data {
-  target = data.aws_ssm_parameter.api_nlb_hostname
+  target = data.aws_ssm_parameter.os_nlb_hostname
   values = {
-    name  = "/oficina/homologacao/platform/api-nlb-hostname"
-    value = "api-homologacao.elb.us-east-1.amazonaws.com"
+    name  = "/oficina/homologacao/services/os-nlb-hostname"
+    value = "os-homologacao.elb.us-east-1.amazonaws.com"
+  }
+}
+
+override_data {
+  target = data.aws_ssm_parameter.billing_checkout_nlb_hostname
+  values = {
+    name  = "/oficina/homologacao/services/billing-checkout-nlb-hostname"
+    value = "billing-homologacao.elb.us-east-1.amazonaws.com"
   }
 }
 
@@ -126,9 +134,10 @@ run "homologacao_root_exposes_safe_wrapper_contract" {
   assert {
     condition = (
       data.aws_ssm_parameter.auth_lambda_arn.name == "/oficina/homologacao/platform/auth-lambda-arn" &&
-      data.aws_ssm_parameter.api_nlb_hostname.name == "/oficina/homologacao/platform/api-nlb-hostname"
+      data.aws_ssm_parameter.os_nlb_hostname.name == "/oficina/homologacao/services/os-nlb-hostname" &&
+      data.aws_ssm_parameter.billing_checkout_nlb_hostname.name == "/oficina/homologacao/services/billing-checkout-nlb-hostname"
     )
-    error_message = "Homologacao must consume only its own Lambda and NLB SSM contracts and expose the Gateway."
+    error_message = "Homologacao must consume its Lambda, OS NLB and billing checkout NLB contracts."
   }
 }
 

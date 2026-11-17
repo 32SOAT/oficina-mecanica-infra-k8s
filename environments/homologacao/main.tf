@@ -9,8 +9,13 @@ data "aws_ssm_parameter" "auth_lambda_arn" {
   with_decryption = false
 }
 
-data "aws_ssm_parameter" "api_nlb_hostname" {
-  name            = "/oficina/homologacao/platform/api-nlb-hostname"
+data "aws_ssm_parameter" "os_nlb_hostname" {
+  name            = "/oficina/homologacao/services/os-nlb-hostname"
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "billing_checkout_nlb_hostname" {
+  name            = "/oficina/homologacao/services/billing-checkout-nlb-hostname"
   with_decryption = false
 }
 
@@ -90,10 +95,11 @@ module "platform_contract" {
 module "api_gateway_http" {
   source = "../../modules/api-gateway-http"
 
-  environment  = local.environment
-  api_name     = "${local.project_name}-${local.environment}-http"
-  lambda_arn   = data.aws_ssm_parameter.auth_lambda_arn.value
-  nlb_hostname = data.aws_ssm_parameter.api_nlb_hostname.value
-  aws_region   = var.aws_region
-  tags         = var.tags
+  environment          = local.environment
+  api_name             = "${local.project_name}-${local.environment}-http"
+  lambda_arn           = data.aws_ssm_parameter.auth_lambda_arn.value
+  nlb_hostname         = data.aws_ssm_parameter.os_nlb_hostname.value
+  billing_nlb_hostname = data.aws_ssm_parameter.billing_checkout_nlb_hostname.value
+  aws_region           = var.aws_region
+  tags                 = var.tags
 }

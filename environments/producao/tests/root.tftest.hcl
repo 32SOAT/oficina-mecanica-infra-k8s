@@ -45,10 +45,18 @@ override_data {
 }
 
 override_data {
-  target = data.aws_ssm_parameter.api_nlb_hostname
+  target = data.aws_ssm_parameter.os_nlb_hostname
   values = {
-    name  = "/oficina/producao/platform/api-nlb-hostname"
-    value = "api-producao.elb.us-east-1.amazonaws.com"
+    name  = "/oficina/producao/services/os-nlb-hostname"
+    value = "os-producao.elb.us-east-1.amazonaws.com"
+  }
+}
+
+override_data {
+  target = data.aws_ssm_parameter.billing_checkout_nlb_hostname
+  values = {
+    name  = "/oficina/producao/services/billing-checkout-nlb-hostname"
+    value = "billing-producao.elb.us-east-1.amazonaws.com"
   }
 }
 
@@ -126,9 +134,10 @@ run "producao_root_exposes_safe_wrapper_contract" {
   assert {
     condition = (
       data.aws_ssm_parameter.auth_lambda_arn.name == "/oficina/producao/platform/auth-lambda-arn" &&
-      data.aws_ssm_parameter.api_nlb_hostname.name == "/oficina/producao/platform/api-nlb-hostname"
+      data.aws_ssm_parameter.os_nlb_hostname.name == "/oficina/producao/services/os-nlb-hostname" &&
+      data.aws_ssm_parameter.billing_checkout_nlb_hostname.name == "/oficina/producao/services/billing-checkout-nlb-hostname"
     )
-    error_message = "Producao must consume only its own Lambda and NLB SSM contracts and expose the Gateway."
+    error_message = "Producao must consume its Lambda, OS NLB and billing checkout NLB contracts."
   }
 }
 
