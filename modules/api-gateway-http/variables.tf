@@ -30,11 +30,21 @@ variable "lambda_arn" {
 
 variable "nlb_hostname" {
   type        = string
-  description = "Hostname publico do NLB da API NestJS consumido do contrato SSM."
+  description = "Hostname publico do NLB da OS, sem protocolo ou barra."
 
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$", var.nlb_hostname))
     error_message = "nlb_hostname deve ser um hostname sem protocolo ou barra."
+  }
+}
+
+variable "billing_nlb_hostname" {
+  type        = string
+  description = "Hostname publico do NLB de checkout do billing, sem protocolo ou barra."
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$", var.billing_nlb_hostname))
+    error_message = "billing_nlb_hostname deve ser um hostname sem protocolo ou barra."
   }
 }
 

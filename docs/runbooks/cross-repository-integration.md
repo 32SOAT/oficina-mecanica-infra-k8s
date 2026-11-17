@@ -42,16 +42,15 @@ comandos que imprimam state, secrets ou connection strings.
 ## Contratos SSM
 
 ```text
-/oficina/homologacao/platform/auth-lambda-arn
-/oficina/homologacao/platform/api-nlb-hostname
-/oficina/producao/platform/auth-lambda-arn
-/oficina/producao/platform/api-nlb-hostname
+/oficina/<ambiente>/platform/auth-lambda-arn
+/oficina/<ambiente>/services/os-nlb-hostname
+/oficina/<ambiente>/services/billing-checkout-nlb-hostname
 ```
 
-`lambda-auth` publica `auth-lambda-arn` após seu apply. O workflow Kubernetes
-publica `api-nlb-hostname` depois que o Service `LoadBalancer` recebe o
-hostname. O root de ambiente do infra-k8s consome ambos por data source e os
-injeta nas integrações do API Gateway. São strings de infraestrutura; não
+`lambda-auth` publica `auth-lambda-arn`. O deploy da OS publica
+`os-nlb-hostname`. O deploy do billing publica
+`billing-checkout-nlb-hostname`. O root de ambiente consome os três. O gateway
+não lê `platform/api-nlb-hostname`. São strings de infraestrutura; não
 armazenam tokens, senhas ou connection strings.
 
 Verifique apenas metadados e existência:
@@ -59,7 +58,9 @@ Verifique apenas metadados e existência:
 ```bash
 aws ssm get-parameter --name "/oficina/${ENV}/platform/auth-lambda-arn" \
   --query 'Parameter.{Name:Name,Type:Type,Version:Version}'
-aws ssm get-parameter --name "/oficina/${ENV}/platform/api-nlb-hostname" \
+aws ssm get-parameter --name "/oficina/${ENV}/services/os-nlb-hostname" \
+  --query 'Parameter.{Name:Name,Type:Type,Version:Version}'
+aws ssm get-parameter --name "/oficina/${ENV}/services/billing-checkout-nlb-hostname" \
   --query 'Parameter.{Name:Name,Type:Type,Version:Version}'
 ```
 
@@ -69,12 +70,13 @@ aws ssm get-parameter --name "/oficina/${ENV}/platform/api-nlb-hostname" \
 2. Aplique `shared` e confirme o contrato do ECR.
 3. Aplique o root `homologacao` para criar VPC, EKS, IAM e contratos de rede,
    sempre usando wrappers e saved plan.
-4. Provisione RDS e API Nest pelos repositórios responsáveis.
+4. Faça o deploy da OS, do billing e da execução. Eles publicam
+   `os-nlb-hostname` e `billing-checkout-nlb-hostname`.
 5. Publique a Lambda em `oficina-mecanica-lambda-auth` com
-   `environment=homologacao`, subnets privadas, security groups e o mesmo
-   `JWT_SECRET` lógico usado pela API. O apply publica `auth-lambda-arn`.
-6. Publique/promova a imagem e execute o deploy Kubernetes. Aguarde migration,
-   rollout e health direto do NLB. O deploy publica `api-nlb-hostname`.
+   `environment=homologacao` e `os_base_url` no NLB da OS. O apply publica
+   `auth-lambda-arn`. A função não recebe `JWT_SECRET`.
+6. Confirme os três contratos SSM. O plan do gateway falha enquanto algum
+   deles não existir.
 7. Aguarde a consistência eventual do SSM e gere o plan do Gateway:
 
    ```bash
@@ -86,8 +88,8 @@ aws ssm get-parameter --name "/oficina/${ENV}/platform/api-nlb-hostname" \
 
 8. Revise e aplique exatamente esse plan por workflow protegido. Nunca use
    apply sem saved plan.
-9. Consulte os outputs permitidos e teste `POST /auth/cpf` e
-   `/api/v1/health` pelo endpoint padrão do API Gateway.
+9. Consulte os outputs permitidos e teste `POST /auth/cpf`,
+   `/api/v1/health` e o checkout pelo endpoint padrão do API Gateway.
 
 Produção repete a sequência com `environment=producao`, branch `main`,
 Environment protegido e aprovação independente. Não copie state, tfvars ou
@@ -97,8 +99,9 @@ secrets de homologação.
 
 | Rota | Integração | Observação |
 | --- | --- | --- |
-| `POST /auth/cpf` | Lambda AWS_PROXY | valida CPF e devolve JWT de cliente |
-| `ANY /{proxy+}` | NLB HTTP_PROXY | encaminha `/api`, `/api/v1` e demais rotas Nest |
+| `POST /auth/cpf` | Lambda AWS_PROXY | chama a OS e devolve o JWT assinado por ela |
+| `GET /api/v1/pagamentos/{osId}/checkout` e `POST .../cobrar` | NLB do billing | borda humana do pagamento |
+| `ANY /{proxy+}` | NLB da OS | login, cadastro, ordem, health e Swagger |
 
 O stage `$default` usa auto deploy. O output `api_gateway_endpoint` é a base
 pública; não acrescente stage ao caminho.
@@ -111,8 +114,8 @@ pública; não acrescente stage ao caminho.
   informe hostname manual no Terraform.
 - **Timeout no proxy:** teste o health diretamente no NLB e confirme
   listener, target e regras de rede. A integração é HTTP e o NLB é público.
-- **CPF falha, health funciona:** confira acesso da Lambda ao RDS e a
-  configuração do JWT, sem imprimir secrets.
+- **CPF falha, health da OS funciona:** confira `OS_BASE_URL` da Lambda. Ela
+  chama `POST /api/v1/auth/cpf` e não assina o JWT.
 - **Plan fora do escopo:** pare e revise ownership; não importe Lambda, API
   Gateway, domínio, WAF, VPC Link, NLB ou logs em outro state.
 

@@ -14,6 +14,11 @@ output "lambda_integration_id" {
 }
 
 output "nlb_integration_id" {
-  description = "ID da integracao proxy HTTP com o NLB."
+  description = "ID da integracao proxy HTTP com o NLB da OS."
   value       = aws_apigatewayv2_integration.proxy.id
+}
+
+output "billing_integration_id" {
+  description = "ID da integracao de checkout e cobranca com o NLB do billing."
+  value       = aws_apigatewayv2_integration.billing.id
 }

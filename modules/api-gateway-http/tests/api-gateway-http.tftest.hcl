@@ -29,11 +29,12 @@ override_resource {
 }
 
 variables {
-  environment  = "homologacao"
-  api_name     = "oficina-mecanica-homologacao"
-  lambda_arn   = "arn:aws:lambda:us-east-1:123456789012:function:oficina-mecanica-auth-cpf-homologacao"
-  nlb_hostname = "api-homologacao.elb.us-east-1.amazonaws.com"
-  aws_region   = "us-east-1"
+  environment          = "homologacao"
+  api_name             = "oficina-mecanica-homologacao"
+  lambda_arn           = "arn:aws:lambda:us-east-1:123456789012:function:oficina-mecanica-auth-cpf-homologacao"
+  nlb_hostname         = "os-homologacao.elb.us-east-1.amazonaws.com"
+  billing_nlb_hostname = "billing-homologacao.elb.us-east-1.amazonaws.com"
+  aws_region           = "us-east-1"
 }
 
 run "creates_http_routes_and_default_stage" {
@@ -43,6 +44,8 @@ run "creates_http_routes_and_default_stage" {
     condition = (
       aws_apigatewayv2_api.this.protocol_type == "HTTP" &&
       aws_apigatewayv2_route.lambda.route_key == "POST /auth/cpf" &&
+      aws_apigatewayv2_route.checkout.route_key == "GET /api/v1/pagamentos/{osId}/checkout" &&
+      aws_apigatewayv2_route.cobrar.route_key == "POST /api/v1/pagamentos/{osId}/cobrar" &&
       aws_apigatewayv2_route.proxy.route_key == "ANY /{proxy+}" &&
       aws_apigatewayv2_stage.default.name == "$default" &&
       aws_apigatewayv2_stage.default.auto_deploy
@@ -53,9 +56,10 @@ run "creates_http_routes_and_default_stage" {
   assert {
     condition = (
       aws_apigatewayv2_integration.lambda.integration_uri == var.lambda_arn &&
-      aws_apigatewayv2_integration.proxy.integration_uri == "http://${var.nlb_hostname}"
+      aws_apigatewayv2_integration.proxy.integration_uri == "http://${var.nlb_hostname}" &&
+      aws_apigatewayv2_integration.billing.integration_uri == "http://${var.billing_nlb_hostname}"
     )
-    error_message = "Integrations must target the Lambda ARN and the HTTP NLB hostname contract."
+    error_message = "Integrations must target the Lambda ARN, the OS NLB and the billing checkout NLB."
   }
 
   assert {

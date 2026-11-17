@@ -28,10 +28,32 @@ resource "aws_apigatewayv2_integration" "proxy" {
   }
 }
 
+resource "aws_apigatewayv2_integration" "billing" {
+  api_id             = aws_apigatewayv2_api.this.id
+  integration_type   = "HTTP_PROXY"
+  integration_method = "ANY"
+  integration_uri    = "http://${var.billing_nlb_hostname}"
+  request_parameters = {
+    "overwrite:path" = "$request.path"
+  }
+}
+
 resource "aws_apigatewayv2_route" "lambda" {
   api_id    = aws_apigatewayv2_api.this.id
   route_key = "POST /auth/cpf"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "checkout" {
+  api_id    = aws_apigatewayv2_api.this.id
+  route_key = "GET /api/v1/pagamentos/{osId}/checkout"
+  target    = "integrations/${aws_apigatewayv2_integration.billing.id}"
+}
+
+resource "aws_apigatewayv2_route" "cobrar" {
+  api_id    = aws_apigatewayv2_api.this.id
+  route_key = "POST /api/v1/pagamentos/{osId}/cobrar"
+  target    = "integrations/${aws_apigatewayv2_integration.billing.id}"
 }
 
 resource "aws_apigatewayv2_route" "proxy" {

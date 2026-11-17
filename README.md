@@ -48,7 +48,8 @@ Os módulos publicam somente parâmetros `String` não sensíveis:
 - `/oficina/<ambiente>/platform/database-subnet-ids`;
 - `/oficina/<ambiente>/platform/database-client-security-group-id`;
 - `/oficina/<ambiente>/platform/eks-cluster-name`;
-- `/oficina/<ambiente>/platform/api-nlb-hostname` (publicado pelo deploy Kubernetes após o Service receber hostname).
+- `/oficina/<ambiente>/services/os-nlb-hostname` (publicado pelo deploy da OS);
+- `/oficina/<ambiente>/services/billing-checkout-nlb-hostname` (publicado pelo deploy do billing).
 
 `<ambiente>` é `homologacao` ou `producao`. Senhas, tokens e connection strings
 não pertencem a esse contrato nem ao state desta plataforma. O ARN da Lambda de
@@ -61,9 +62,9 @@ deste repositório.
 O fluxo completo e a tabela producer/consumer estão em
 [Integração com lambda-auth e API](docs/runbooks/cross-repository-integration.md).
 Em uma instalação nova, a ordem é: bootstrap administrativo; root `shared`;
-roots de ambiente; banco e API Nest; Lambda de autenticação; deploy Kubernetes
-que publica o hostname do NLB; e, por último, o API Gateway depois que os dois
-contratos SSM existirem.
+roots de ambiente; OS, billing e execução; Lambda de autenticação; e, por
+último, o API Gateway depois que existirem `auth-lambda-arn`,
+`os-nlb-hostname` e `billing-checkout-nlb-hostname`.
 
 O endpoint público usa a URL padrão do HTTP API:
 `https://<api-id>.execute-api.<region>.amazonaws.com`. Domínio customizado, ACM,

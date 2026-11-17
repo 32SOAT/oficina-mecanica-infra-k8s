@@ -161,25 +161,25 @@ enquanto `ALLOW_PRODUCTION_DESTROY` não for exatamente `true` no ambiente
 ## API Gateway e contratos dinâmicos
 
 O API Gateway HTTP e gerenciado exclusivamente pelo state do ambiente em
-`environments/homologacao` ou `environments/producao`. Antes do primeiro plan
-desse state, o `lambda-auth` deve ter publicado
-`/oficina/<ambiente>/platform/auth-lambda-arn` e o deploy Kubernetes deve ter
-publicado `/oficina/<ambiente>/platform/api-nlb-hostname`.
+`environments/homologacao` ou `environments/producao`. Antes do plan desse
+state, estes contratos precisam existir:
 
-O hostname do NLB e dinamico: `scripts/kubernetes-deploy.sh` o obtem do
-Service `LoadBalancer` e atualiza o parametro SSM com `PutParameter`.
-Aguarde a consistencia eventual do SSM antes de executar o plan do Gateway.
+- `/oficina/<ambiente>/platform/auth-lambda-arn`, publicado pela Lambda;
+- `/oficina/<ambiente>/services/os-nlb-hostname`, publicado pelo deploy da OS;
+- `/oficina/<ambiente>/services/billing-checkout-nlb-hostname`, publicado pelo deploy do billing.
+
+O gateway nao consome mais `/oficina/<ambiente>/platform/api-nlb-hostname`.
+Aguarde a consistencia eventual do SSM antes de executar o plan.
 
 Procedimento seguro para homologacao:
 
-1. Aplique o Terraform do `lambda-auth` com `environment=homologacao`.
-2. Confirme apenas a existencia dos dois contratos SSM, sem imprimir valores.
-3. Execute o deploy Kubernetes de homologacao e aguarde o health direto do NLB.
-4. Execute `bash scripts/terraform-init.sh homologacao`.
-5. Gere o saved plan com `bash scripts/terraform-plan.sh homologacao <arquivo>`.
-6. Revise `bash scripts/terraform-plan-policy.sh homologacao <arquivo>`.
-7. Somente após revisão humana, aplique exatamente o saved plan no ambiente protegido.
-8. Valide `api_gateway_endpoint`, `POST /auth/cpf` e `/api/v1/health`.
+1. Faca o deploy da OS, do billing e da execucao e aplique a Lambda com `environment=homologacao`.
+2. Confirme apenas a existencia dos tres contratos SSM, sem imprimir valores.
+3. Execute `bash scripts/terraform-init.sh homologacao`.
+4. Gere o saved plan com `bash scripts/terraform-plan.sh homologacao <arquivo>`.
+5. Revise `bash scripts/terraform-plan-policy.sh homologacao <arquivo>`.
+6. Somente apos revisao humana, aplique exatamente o saved plan no ambiente protegido.
+7. Valide `api_gateway_endpoint`, `POST /auth/cpf`, `/api/v1/health` e o checkout.
 
 Não aplique produção a partir deste procedimento. O fluxo completo está em
 [cross-repository-integration.md](cross-repository-integration.md). Não execute
