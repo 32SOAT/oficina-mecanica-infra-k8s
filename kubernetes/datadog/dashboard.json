@@ -138,6 +138,158 @@
           }
         ]
       }
+    },
+    {
+      "definition": {
+        "title": "Etapas da saga por serviço",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "sum:trace.saga.command.hits{$env} by {service}.as_count()"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Duração p95 das etapas da saga",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "p95:trace.saga.command{$env} by {service}"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "line"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Etapas da saga com falha",
+        "type": "timeseries",
+        "show_legend": false,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "q",
+                "indexes": ["*"],
+                "compute": { "aggregation": "count" },
+                "group_by": [],
+                "search": {
+                  "query": "$env service:oficina-os @context:SagaResultProcessor \"Etapa da saga falhou\""
+                }
+              }
+            ],
+            "formulas": [{ "formula": "q", "alias": "Falhas" }],
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "CPU por serviço",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "avg:container.cpu.usage{$env} by {service}"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "line"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Memória por serviço",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "avg:container.memory.usage{$env} by {service}"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "line"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Pods indisponíveis por serviço",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "sum:kubernetes_state.deployment.replicas_unavailable{kube_namespace:oficina-mecanica} by {kube_cluster_name,kube_deployment}"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Reinícios de containers por serviço",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "response_format": "timeseries",
+            "queries": [
+              {
+                "data_source": "metrics",
+                "name": "q",
+                "query": "sum:kubernetes.containers.restarts{kube_namespace:oficina-mecanica} by {kube_cluster_name,kube_deployment}"
+              }
+            ],
+            "formulas": [{ "formula": "q" }],
+            "display_type": "line"
+          }
+        ]
+      }
     }
   ]
 }

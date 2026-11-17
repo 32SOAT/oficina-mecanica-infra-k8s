@@ -1,0 +1,12 @@
+{
+  "name": "Falha em etapa da saga - {{env.name}}",
+  "type": "log alert",
+  "query": "logs(\"service:oficina-os @context:SagaResultProcessor \\\"Etapa da saga falhou\\\"\").index(\"*\").rollup(\"count\").by(\"env\").last(\"5m\") > 0",
+  "message": "{{value}} etapa(s) de saga falharam em 5 minutos no ambiente {{env.name}}. O os-service inicia a compensação da ordem de serviço.\n\nPrimeiro passo: abrir os logs do os-service, contexto `SagaResultProcessor`, para ver o `sagaId`, o `osId` e o motivo (`code` e `message`). O log leva ao trace da etapa.\n\n@alerts@fiap.tech",
+  "tags": ["team:32soat", "project:oficina-mecanica", "service:oficina-os"],
+  "options": {
+    "thresholds": { "critical": 0 },
+    "notify_no_data": false,
+    "include_tags": true
+  }
+}
