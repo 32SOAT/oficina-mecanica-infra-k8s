@@ -129,7 +129,7 @@
                 "compute": { "aggregation": "count" },
                 "group_by": [],
                 "search": {
-                  "query": "$env service:oficina-mecanica-os-service @context:NotificarListener \"Falha ao enviar e-mail\""
+                  "query": "$env service:oficina-os @context:NotificarListener \"Falha ao enviar e-mail\""
                 }
               }
             ],
